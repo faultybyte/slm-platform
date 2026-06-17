@@ -23,6 +23,7 @@ class ChatCompletionRequest(BaseModel):
     messages: list[ChatMessage]
     system_prompt: str | None = None
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    top_p: float = Field(default=1.0, ge=0.0, le=1.0)
     max_tokens: int = Field(default=512, ge=1, le=4096)
     stream: bool = False
     conversation_id: int | None = None
@@ -134,6 +135,7 @@ async def chat_completions(
         "messages": processed_messages,
         "temperature": request.temperature,
         "max_tokens": request.max_tokens,
+        "top_p": request.top_p,
         "stream": request.stream
     }
 
