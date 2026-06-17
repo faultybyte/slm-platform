@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 import docker
 
-from app.routes import auth, inference, documents, datasets, training, api_keys
+from app.routes import auth, training, datasets, inference, api_keys, conversations, documents 
 
 # Define the cleanup lifecycle
 @asynccontextmanager
@@ -33,6 +33,7 @@ app.include_router(documents.router)
 app.include_router(datasets.router)
 app.include_router(training.router)
 app.include_router(api_keys.router)
+app.include_router(conversations.router)
 
 @app.get("/health", tags=["System"])
 async def health_check():

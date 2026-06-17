@@ -4,6 +4,7 @@ import asyncio
 import aiofiles
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from sse_starlette.sse import EventSourceResponse
 from app.database import get_db
 from app.models import Model, Dataset
@@ -21,6 +22,24 @@ SUPPORTED_MODELS = {
         "gguf_path": "storage/models/qwen.gguf" # Assuming you download this later
     }
 }
+
+@router.get("/")
+async def list_models(db: AsyncSession = Depends(get_db), user_id: int = Depends(get_current_user)):
+    """Returns all models owned by the user for the frontend dashboard."""
+    sql = select(Model).where(Model.user_id == user_id).order_by(Model.id.desc())
+    result = await db.execute(sql)
+    models = result.scalars().all()
+    
+    return [
+        {
+            "id": m.id,
+            "display_name": m.display_name,
+            "status": m.status,
+            "base_model": "TinyLlama" if "tiny" in getattr(m, "base_model_path", "").lower() else "Unknown",
+            "created_at": m.created_at
+        }
+        for m in models
+    ]
 
 @router.post("/")
 async def register_model(
@@ -111,3 +130,27 @@ async def stream_training_logs(
     """Opens a Server-Sent Events (SSE) stream to push live training telemetry."""
     log_path = f"storage/logs/training_{model_id}.log"
     return EventSourceResponse(log_tailer(log_path))
+
+@router.get("/{model_id}/logs")
+async def get_historical_model_logs(
+    model_id: int,
+    db: AsyncSession = Depends(get_db),
+    user_id: int = Depends(get_current_user)
+):
+    """Fetches non-streaming historical log text blocks for completed/failed runs."""
+    model_record = await db.get(Model, model_id)
+    
+    if not model_record or model_record.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Model target logs not found.")
+        
+    log_file_path = f"storage/logs/train_model_{model_id}.log"
+    
+    if not os.path.exists(log_file_path):
+        return {"logs": f"Status: {model_record.status}. Initialization log buffer is empty."}
+        
+    try:
+        with open(log_file_path, "r", encoding="utf-8") as f:
+            log_data = f.read()
+        return {"model_id": model_id, "status": model_record.status, "logs": log_data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to extract log context: {str(e)}")

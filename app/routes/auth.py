@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import text
 from app.database import get_db
 from app.models import User
 from app.schemas import UserCreate, UserResponse, Token
-from app.auth_utils import hash_password, verify_password, create_access_token
+from app.auth_utils import hash_password, verify_password, create_access_token, get_current_user
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -41,3 +42,24 @@ async def login(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
     # Generate encrypted signature token context
     access_token = create_access_token(data={"sub": str(user.id), "email": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
+
+@router.get("/me")
+async def get_current_user_profile(
+    db: AsyncSession = Depends(get_db), 
+    user_id: int = Depends(get_current_user)
+):
+    """Returns current user identity and token consumption telemetry for the global Navbar."""
+    # Assuming your User model has email or username fields. 
+    # If tracking tokens dynamically, you can sum message token usages or read a user column.
+    result = await db.execute(text("SELECT email, total_tokens_consumed FROM users WHERE id = :id"), {"id": user_id})
+    user_row = result.fetchone()
+    
+    if not user_row:
+        raise HTTPException(status_code=404, detail="User profile not found.")
+        
+    return {
+        "id": user_id,
+        "email": user_row[0],
+        "token_count": user_row[1] or 0, # Maps directly to 'Tokens: 150k' on the frontend Navbar
+        "role": "developer"
+    }
