@@ -1,0 +1,3 @@
+{"messages": [{"role": "user", "content": "Valid line!"}]}
+{"messages": [{"content": "I am missing a role!"}]}
+{"messages": [{"role": "user", "content": "I am missing a closing bracket!"}
