@@ -81,4 +81,4 @@ async def list_datasets(db: AsyncSession = Depends(get_db), user_id: int = Depen
     sql = select(Dataset).where(Dataset.user_id == user_id)
     result = await db.execute(sql)
     datasets = result.scalars().all()
-    return [{"id": d.id, "file_path": d.file_path, "created_at": d.created_at} for d in datasets]
+    return [{"id": d.id, "file_path": d.file_path, "uploaded_at": d.uploaded_at} for d in datasets]
