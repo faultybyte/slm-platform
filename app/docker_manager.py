@@ -19,7 +19,7 @@ def get_free_port() -> int:
     s.close()
     return port
 
-async def wait_for_health(port: int, timeout: int = 30) -> bool:
+async def wait_for_health(port: int, timeout: int = 600) -> bool:
     """Polls the container until it is fully loaded into RAM and ready to accept traffic."""
     url = f"http://127.0.0.1:{port}/health"
     async with httpx.AsyncClient() as http_client:

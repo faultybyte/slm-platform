@@ -11,3 +11,5 @@ wheels/
 
 # local storage
 storage/
+
+/frontend/node_modules
