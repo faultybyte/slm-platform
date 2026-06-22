@@ -7,6 +7,8 @@ export interface ChatConfig {
   temperature: number;
   topP: number;
   maxTokens: number;
+  /** Whether to use SSE streaming mode. Matches the backend `stream` field. */
+  stream?: boolean;
 }
 
 export const DEFAULT_CHAT_CONFIG: ChatConfig = {
@@ -14,6 +16,7 @@ export const DEFAULT_CHAT_CONFIG: ChatConfig = {
   temperature: 0.7,
   topP: 1.0,
   maxTokens: 512,
+  stream: true,
 };
 
 export const CHAT_CONFIG_LIMITS = {

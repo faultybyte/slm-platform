@@ -14,18 +14,14 @@ export function RightSidebar() {
   const { config, updateConfig, isSidebarOpen, setSidebarOpen } = useChatConfig();
   const { temperature, topP, maxTokens } = CHAT_CONFIG_LIMITS;
 
-  if (!isSidebarOpen) {
-    return null;
-  }
+  if (!isSidebarOpen) return null;
 
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col gap-5 overflow-y-auto border-l bg-sidebar p-4">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium">Generation settings</span>
         <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
+          variant="ghost" size="icon" className="h-7 w-7"
           onClick={() => setSidebarOpen(false)}
           aria-label="Collapse settings panel"
         >
@@ -33,6 +29,7 @@ export function RightSidebar() {
         </Button>
       </div>
 
+      {/* System prompt */}
       <div className="flex flex-col gap-2">
         <Label htmlFor="system-prompt">System prompt</Label>
         <Textarea
@@ -46,57 +43,89 @@ export function RightSidebar() {
 
       <Separator />
 
+      {/* Temperature */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <Label htmlFor="temperature">Temperature</Label>
-          <span className="text-xs text-muted-foreground">
-            {config.temperature.toFixed(1)}
-          </span>
+          <span className="text-xs text-muted-foreground">{config.temperature.toFixed(1)}</span>
         </div>
         <Slider
           id="temperature"
-          min={temperature.min}
-          max={temperature.max}
-          step={temperature.step}
+          min={temperature.min} max={temperature.max} step={temperature.step}
           value={[config.temperature]}
           onValueChange={([v]) => updateConfig({ temperature: v })}
         />
+        <p className="text-[11px] text-muted-foreground">
+          {config.temperature < 0.4 ? "Focused — more deterministic output" :
+           config.temperature < 1.1 ? "Balanced — mix of creativity and precision" :
+           "Creative — higher variance, more exploratory"}
+        </p>
       </div>
 
+      {/* Top-P */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <Label htmlFor="top-p">Top-P</Label>
-          <span className="text-xs text-muted-foreground">
-            {config.topP.toFixed(2)}
-          </span>
+          <span className="text-xs text-muted-foreground">{config.topP.toFixed(2)}</span>
         </div>
         <Slider
           id="top-p"
-          min={topP.min}
-          max={topP.max}
-          step={topP.step}
+          min={topP.min} max={topP.max} step={topP.step}
           value={[config.topP]}
           onValueChange={([v]) => updateConfig({ topP: v })}
         />
+        <p className="text-[11px] text-muted-foreground">
+          Nucleus sampling — lower values constrain token selection to the most likely options.
+        </p>
       </div>
 
+      {/* Max tokens */}
       <div className="flex flex-col gap-2">
-        <Label htmlFor="max-tokens">Max tokens</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor="max-tokens">Max tokens</Label>
+          <span className="text-xs text-muted-foreground">max {maxTokens.max.toLocaleString()}</span>
+        </div>
         <Input
           id="max-tokens"
           type="number"
-          min={maxTokens.min}
-          max={maxTokens.max}
+          min={maxTokens.min} max={maxTokens.max}
           value={config.maxTokens}
           onChange={(e) => {
             const value = Number(e.target.value);
             if (!Number.isNaN(value)) {
-              updateConfig({
-                maxTokens: Math.min(maxTokens.max, Math.max(maxTokens.min, value)),
-              });
+              updateConfig({ maxTokens: Math.min(maxTokens.max, Math.max(maxTokens.min, value)) });
             }
           }}
         />
+      </div>
+
+      <Separator />
+
+      {/* Stream toggle */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <Label htmlFor="stream-toggle" className="cursor-pointer">Streaming</Label>
+          <button
+            id="stream-toggle"
+            role="switch"
+            aria-checked={config.stream ?? true}
+            onClick={() => updateConfig({ stream: !(config.stream ?? true) })}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
+              (config.stream ?? true) ? "bg-primary" : "bg-muted"
+            }`}
+          >
+            <span
+              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                (config.stream ?? true) ? "translate-x-[18px]" : "translate-x-[3px]"
+              }`}
+            />
+          </button>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          {(config.stream ?? true)
+            ? "Tokens stream as they are generated — lower perceived latency."
+            : "Full response is returned at once after generation completes."}
+        </p>
       </div>
     </aside>
   );
