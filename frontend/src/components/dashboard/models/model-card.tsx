@@ -14,6 +14,8 @@ import {
   Info,
   Settings2,
   ChevronDown,
+  RotateCcw,
+  Database,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ModelStatusBadge } from "@/components/models/model-status-badge";
@@ -103,11 +105,106 @@ function InlineProgress({
   );
 }
 
+/** Shared training-params sliders panel */
+function TrainingParamsPanel({
+  params,
+  onChange,
+}: {
+  params: TrainingParams;
+  onChange: (p: TrainingParams) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 rounded-md border bg-muted/30 p-2.5">
+      {(
+        [
+          { key: "numEpochs",    label: "Epochs",         min: 1,  max: 20,   step: 1  },
+          { key: "batchSize",    label: "Batch size",     min: 1,  max: 32,   step: 1  },
+          { key: "warmupSteps",  label: "Warmup steps",   min: 0,  max: 200,  step: 5  },
+          { key: "maxSeqLength", label: "Max seq length", min: 64, max: 2048, step: 64 },
+        ] as const
+      ).map(({ key, label, min, max, step }) => (
+        <div key={key} className="flex flex-col gap-1">
+          <div className="flex justify-between text-[11px]">
+            <span className="text-muted-foreground">{label}</span>
+            <span className="font-medium">{params[key]}</span>
+          </div>
+          <Slider
+            min={min}
+            max={max}
+            step={step}
+            value={[params[key] as number]}
+            onValueChange={([v]) => onChange({ ...params, [key]: v })}
+          />
+        </div>
+      ))}
+      <div className="flex flex-col gap-1">
+        <div className="flex justify-between text-[11px]">
+          <span className="text-muted-foreground">Learning rate</span>
+          <span className="font-medium">
+            {(params.learningRate ?? 2e-4).toExponential(0)}
+          </span>
+        </div>
+        <Slider
+          min={1}
+          max={20}
+          step={1}
+          value={[Math.round((params.learningRate ?? 2e-4) / 1e-5)]}
+          onValueChange={([v]) =>
+            onChange({ ...params, learningRate: v * 1e-5 })
+          }
+        />
+        <span className="text-[10px] text-muted-foreground">
+          Range: 1×10⁻⁵ → 2×10⁻⁴
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** Dataset dropdown for uploaded models that need to pick before training */
+function DatasetSelector({
+  datasets,
+  selectedId,
+  onSelect,
+}: {
+  datasets: { id: number; filename: string }[];
+  selectedId: number | null;
+  onSelect: (id: number) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <Database className="h-3 w-3" />
+        Select dataset
+      </div>
+      <select
+        value={selectedId ?? ""}
+        onChange={(e) => onSelect(Number(e.target.value))}
+        onClick={(e) => e.stopPropagation()}
+        className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+      >
+        <option value="" disabled>
+          — choose a dataset —
+        </option>
+        {datasets.map((d) => (
+          <option key={d.id} value={d.id}>
+            {d.filename}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 export function ModelCard({ model }: { model: ModelSummary }) {
   const router = useRouter();
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [showBaseInfo, setShowBaseInfo] = useState(false);
-  const [showTrainParams, setShowTrainParams] = useState(false);
+
+  const [confirmDelete, setConfirmDelete]       = useState(false);
+  const [showBaseInfo, setShowBaseInfo]         = useState(false);
+  const [showTrainParams, setShowTrainParams]   = useState(false);
+  const [showRetrainPanel, setShowRetrainPanel] = useState(false);
+  const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null);
+
   const [trainParams, setTrainParams] = useState<TrainingParams>({
     numEpochs: 3,
     learningRate: 2e-4,
@@ -115,40 +212,64 @@ export function ModelCard({ model }: { model: ModelSummary }) {
     warmupSteps: 10,
     maxSeqLength: 512,
   });
+
+  const [isStarting, setIsStarting] = useState(false);
+
   const startTraining = useStartTraining();
-  const deleteModel = useDeleteModel();
+  const deleteModel   = useDeleteModel();
   const { data: datasets } = useDatasets();
 
-  const isTraining = model.status === "TRAINING";
-  const canTrain = model.status === "PENDING" || model.status === "FAILED";
+  const isTraining  = model.status === "TRAINING";
+  const canTrain    = model.status === "PENDING" || model.status === "FAILED";
   const isUserOwned = !model.is_base_model;
-  const isUploaded = model.is_uploaded;
+  const isUploaded  = !!model.is_uploaded;
   const isCompleted = model.status === "COMPLETED" || model.status === "READY";
+
+  /** Retrain is available for ANY user-owned model (fine-tuned or uploaded) once training has run */
+  const canRetrain  = isCompleted && isUserOwned;
 
   const dataset = datasets?.find((d) => d.id === model.dataset_id);
   const baseInfo = BASE_MODEL_INFO[model.base_model_key ?? ""];
 
-  // SSE logs — only active when training
+  // SSE logs — active while training or while we've just initiated start
   const { logs, isDone } = useTrainingLogs(
-    isTraining ? model.id : null,
-    isTraining,
+    (isTraining || isStarting) ? model.id : null,
+    (isTraining || isStarting),
   );
+
+  /** Resolve which dataset to use when triggering training */
+  const getEffectiveDataset = () => {
+    if (isUploaded) {
+      return datasets?.find((d) => d.id === selectedDatasetId) ?? null;
+    }
+    return dataset ?? null;
+  };
 
   const handleStartTraining = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!dataset) {
-      toast.error("Dataset not found for this model.");
+    const eff = getEffectiveDataset();
+    if (!eff) {
+      toast.error(
+        isUploaded
+          ? "Please select a dataset before training."
+          : "Dataset not found for this model.",
+      );
       return;
     }
+    // Prevent accidental double clicks by using local starting flag
+    if (isStarting || startTraining.isPending) return;
+    setIsStarting(true);
     startTraining.mutate(
+      { modelId: model.id, datasetPath: eff.file_path, trainingParams: trainParams },
       {
-        modelId: model.id,
-        datasetPath: dataset.file_path,
-        trainingParams: trainParams,
-      },
-      {
-        onSuccess: () => toast.success("Training started."),
-        onError: (err) => toast.error(err.message),
+        onSuccess: () => {
+          toast.success("Training started.");
+          setIsStarting(false);
+        },
+        onError: (err) => {
+          toast.error(err.message);
+          setIsStarting(false);
+        },
       },
     );
   };
@@ -192,19 +313,22 @@ export function ModelCard({ model }: { model: ModelSummary }) {
           </button>
         )}
 
-        {/* Header */}
+        {/* ── Header ── */}
         <div className="flex items-start gap-2 pr-6">
-          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary">
+          <div
+            className={cn(
+              "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
+              isUploaded ? "bg-violet-100 dark:bg-violet-950" : "bg-secondary",
+            )}
+          >
             {isUploaded ? (
-              <Upload className="h-3.5 w-3.5 text-muted-foreground" />
+              <Upload className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
             ) : (
               <Cpu className="h-3.5 w-3.5 text-muted-foreground" />
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold">
-              {model.display_name}
-            </p>
+            <p className="truncate text-sm font-semibold">{model.display_name}</p>
             <p className="truncate text-xs text-muted-foreground">
               {model.base_model_key}
               {model.is_base_model
@@ -216,7 +340,7 @@ export function ModelCard({ model }: { model: ModelSummary }) {
           </div>
         </div>
 
-        {/* Base model details (system models) */}
+        {/* Base model info chip */}
         {model.is_base_model && baseInfo && (
           <div className="rounded-md border bg-muted/30 px-3 py-2">
             <div className="flex items-center justify-between gap-2">
@@ -241,7 +365,7 @@ export function ModelCard({ model }: { model: ModelSummary }) {
           </div>
         )}
 
-        {/* Status row */}
+        {/* ── Status row ── */}
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
             <ModelStatusDot status={isDone ? "COMPLETED" : model.status} />
@@ -257,12 +381,12 @@ export function ModelCard({ model }: { model: ModelSummary }) {
           </p>
         </div>
 
-        {/* Inline training progress */}
+        {/* ── Inline training progress ── */}
         {(isTraining || (isDone && logs.length > 0)) && (
           <InlineProgress logs={logs} isDone={isDone} isTraining={isTraining} />
         )}
 
-        {/* Training done banner */}
+        {/* Training-done banner */}
         {isDone && (
           <div className="flex items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1.5 dark:bg-emerald-950/30">
             <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
@@ -272,17 +396,34 @@ export function ModelCard({ model }: { model: ModelSummary }) {
           </div>
         )}
 
-        {/* Actions */}
-        <div
-          className="flex flex-col gap-2"
-          onClick={(e) => e.stopPropagation()}
-        >
+        {/* ══════════════════════════════════════════
+            Actions area — stop propagation so clicks
+            don't navigate to the detail page.
+        ══════════════════════════════════════════ */}
+        <div className="flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
+
+          {/* ── TRAIN (PENDING / FAILED) ── */}
           {canTrain && (
             <>
+              {/* Dataset picker — only for uploaded models */}
+              {isUploaded && datasets && datasets.length > 0 && (
+                <DatasetSelector
+                  datasets={datasets}
+                  selectedId={selectedDatasetId}
+                  onSelect={setSelectedDatasetId}
+                />
+              )}
+              {isUploaded && (!datasets || datasets.length === 0) && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                  No datasets found. Upload a dataset first.
+                </p>
+              )}
+
+              {/* Training-params toggle */}
               <button
                 type="button"
                 onClick={() => setShowTrainParams((v) => !v)}
-                className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                className="flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
               >
                 <Settings2 className="h-3 w-3" />
                 Training parameters
@@ -295,96 +436,113 @@ export function ModelCard({ model }: { model: ModelSummary }) {
               </button>
 
               {showTrainParams && (
-                <div className="flex flex-col gap-2 rounded-md border bg-muted/30 p-2.5">
-                  {(
-                    [
-                      {
-                        key: "numEpochs",
-                        label: "Epochs",
-                        min: 1,
-                        max: 20,
-                        step: 1,
-                      },
-                      {
-                        key: "batchSize",
-                        label: "Batch size",
-                        min: 1,
-                        max: 32,
-                        step: 1,
-                      },
-                      {
-                        key: "warmupSteps",
-                        label: "Warmup steps",
-                        min: 0,
-                        max: 200,
-                        step: 5,
-                      },
-                      {
-                        key: "maxSeqLength",
-                        label: "Max seq length",
-                        min: 64,
-                        max: 2048,
-                        step: 64,
-                      },
-                    ] as const
-                  ).map(({ key, label, min, max, step }) => (
-                    <div key={key} className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px]">
-                        <span className="text-muted-foreground">{label}</span>
-                        <span className="font-medium">{trainParams[key]}</span>
-                      </div>
-                      <Slider
-                        min={min}
-                        max={max}
-                        step={step}
-                        value={[trainParams[key] as number]}
-                        onValueChange={([v]) =>
-                          setTrainParams((p) => ({ ...p, [key]: v }))
-                        }
-                      />
-                    </div>
-                  ))}
-                  <div className="flex flex-col gap-1">
-                    <div className="flex justify-between text-[11px]">
-                      <span className="text-muted-foreground">
-                        Learning rate
-                      </span>
-                      <span className="font-medium">
-                        {(trainParams.learningRate ?? 2e-4).toExponential(0)}
-                      </span>
-                    </div>
-                    <Slider
-                      min={1}
-                      max={20}
-                      step={1}
-                      value={[
-                        Math.round((trainParams.learningRate ?? 2e-4) / 1e-5),
-                      ]}
-                      onValueChange={([v]) =>
-                        setTrainParams((p) => ({
-                          ...p,
-                          learningRate: v * 1e-5,
-                        }))
-                      }
-                    />
-                    <span className="text-[10px] text-muted-foreground">
-                      Range: 1×10⁻⁵ → 2×10⁻⁴
-                    </span>
-                  </div>
-                </div>
+                <TrainingParamsPanel
+                  params={trainParams}
+                  onChange={setTrainParams}
+                />
               )}
 
               <Button
                 size="sm"
-                className="h-7 text-xs self-start"
+                className="h-7 self-start text-xs"
                 onClick={handleStartTraining}
-                disabled={startTraining.isPending || !dataset}
+                disabled={
+                  startTraining.isPending ||
+                  (isUploaded ? !selectedDatasetId : !dataset)
+                }
               >
                 <Play className="h-3 w-3" />
-                {startTraining.isPending ? "Starting…" : "Train"}
+                {startTraining.isPending ? "Starting…" : "Start training"}
               </Button>
             </>
           )}
+
+          {/* ── RETRAIN (COMPLETED / READY — both fine-tuned AND uploaded) ── */}
+          {canRetrain && !isTraining && (
+            <div className="flex flex-col gap-2">
+              {/* Divider only when not freshly trained (isDone banner already visible) */}
+              {!isDone && (
+                <div className="h-px w-full bg-border" />
+              )}
+
+              <button
+                type="button"
+                onClick={() => setShowRetrainPanel((v) => !v)}
+                className="flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <RotateCcw className="h-3 w-3" />
+                Retrain model
+                <ChevronDown
+                  className={cn(
+                    "h-3 w-3 transition-transform",
+                    showRetrainPanel && "rotate-180",
+                  )}
+                />
+              </button>
+
+              {showRetrainPanel && (
+                <div className="flex flex-col gap-2">
+                  {/* Dataset picker — uploaded models need to pick; fine-tuned can re-use existing */}
+                  {isUploaded && datasets && datasets.length > 0 && (
+                    <DatasetSelector
+                      datasets={datasets}
+                      selectedId={selectedDatasetId}
+                      onSelect={setSelectedDatasetId}
+                    />
+                  )}
+                  {isUploaded && (!datasets || datasets.length === 0) && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                      No datasets found. Upload a dataset first.
+                    </p>
+                  )}
+                  {!isUploaded && dataset && (
+                    <p className="text-[11px] text-muted-foreground">
+                      <span className="font-medium">Dataset:</span> {dataset.filename}
+                    </p>
+                  )}
+
+                  {/* Params */}
+                  <button
+                    type="button"
+                    onClick={() => setShowTrainParams((v) => !v)}
+                    className="flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <Settings2 className="h-3 w-3" />
+                    Training parameters
+                    <ChevronDown
+                      className={cn(
+                        "h-3 w-3 transition-transform",
+                        showTrainParams && "rotate-180",
+                      )}
+                    />
+                  </button>
+
+                  {showTrainParams && (
+                    <TrainingParamsPanel
+                      params={trainParams}
+                      onChange={setTrainParams}
+                    />
+                  )}
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 self-start text-xs"
+                    onClick={handleStartTraining}
+                    disabled={
+                      startTraining.isPending ||
+                      (isUploaded ? !selectedDatasetId : !dataset)
+                    }
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    {startTraining.isPending ? "Starting…" : "Retrain"}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Footer row ── */}
           <div className="flex items-center gap-2">
             {isTraining && !isDone && (
               <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -399,7 +557,7 @@ export function ModelCard({ model }: { model: ModelSummary }) {
         </div>
       </div>
 
-      {/* Confirm delete dialog */}
+      {/* ── Confirm delete dialog ── */}
       <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <DialogContent
           className="max-w-sm"

@@ -4,7 +4,9 @@ import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Play, Cpu, Upload, Database, Calendar, Hash, Layers, Loader2, X, CheckCircle2, Zap, Info, Pause, Square, Settings2, ChevronDown,
+  ArrowLeft, Play, Cpu, Upload, Database, Calendar, Hash, Layers,
+  Loader2, X, CheckCircle2, Zap, Pause, Square, Settings2, ChevronDown,
+  RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ModelStatusBadge } from "@/components/models/model-status-badge";
@@ -12,7 +14,13 @@ import { ModelStatusDot } from "@/components/dashboard/model-status-dot";
 import { TrainingLogViewer } from "@/components/models/training-log-viewer";
 import { useModels } from "@/lib/hooks/use-models";
 import { useDatasets } from "@/lib/hooks/use-datasets";
-import { useStartTraining, useDeleteModel, useStopTraining, usePauseTraining, useResumeTraining } from "@/lib/hooks/use-model-actions";
+import {
+  useStartTraining,
+  useDeleteModel,
+  useStopTraining,
+  usePauseTraining,
+  useResumeTraining,
+} from "@/lib/hooks/use-model-actions";
 import { useTrainingLogs } from "@/lib/hooks/use-training-logs";
 import type { TrainingParams } from "@/types/api";
 import {
@@ -20,27 +28,18 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-const BASE_MODEL_INFO: Record<string, { params: string; hfId: string; speed: string; useCase: string; goodFor: string[] }> = {
-  tinyllama: {
-    params: "1.1B",
-    hfId: "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-    speed: "Fast — runs on CPU",
-    useCase: "Well-rounded compact model tuned for chat. Best for Q&A, classification, and short-form generation tasks where inference speed matters more than raw capability.",
-    goodFor: ["Q&A / FAQ bots", "Text classification", "Short-form generation", "CPU inference"],
-  },
-  qwen: {
-    params: "0.5B",
-    hfId: "Qwen/Qwen1.5-0.5B-Chat",
-    speed: "Very fast — minimal VRAM",
-    useCase: "Ultra-compact multilingual model. Ideal for resource-constrained deployments or rapid iteration when you need a quick fine-tune baseline.",
-    goodFor: ["Multilingual tasks", "Low-resource hardware", "Rapid prototyping", "Edge deployment"],
-  },
-};
+// Supported base models for LoRA fine-tuning
+const SUPPORTED_BASE_MODELS = [
+  { key: "llama3.2-1b",                   label: "Llama 3.2 1B" },
+  { key: "qwen2.5-3b",                    label: "Qwen 2.5 3B" },
+  { key: "deepseek-r1-distill-qwen-1.5b", label: "DeepSeek-R1 1.5B" },
+  { key: "gemma3-1b",                      label: "Gemma 3 1B" },
+];
 
 const DEFAULT_TRAIN_PARAMS: TrainingParams = {
   numEpochs: 3,
   learningRate: 2e-4,
-  batchSize: 4,
+  batchSize: 1,
   warmupSteps: 10,
   maxSeqLength: 512,
 };
@@ -111,7 +110,6 @@ function TrainingParamsPanel({
     { key: "maxSeqLength", label: "Max seq length",  min: 64, max: 2048, step: 64 },
   ];
 
-  // learningRate stored as actual value (e.g. 2e-4), slider works in 1e-5 increments 1–20
   const lrSliderValue = Math.round((params.learningRate ?? 2e-4) / 1e-5);
 
   return (
@@ -144,7 +142,6 @@ function TrainingParamsPanel({
             </div>
           ))}
 
-          {/* Learning rate — special handling */}
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between text-xs">
               <span className="text-muted-foreground">Learning rate</span>
@@ -166,31 +163,48 @@ function TrainingParamsPanel({
 export default function ModelDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const [showLogs, setShowLogs] = useState(true);
+  const [showLogs, setShowLogs]         = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [isStarting, setIsStarting] = useState(false);
-  const [trainParams, setTrainParams] = useState<TrainingParams>(DEFAULT_TRAIN_PARAMS);
+  const [isStarting, setIsStarting]     = useState(false);
+  const [trainParams, setTrainParams]   = useState<TrainingParams>(DEFAULT_TRAIN_PARAMS);
+  // For uploaded models: user picks which HF base model to use for LoRA training
+  const [selectedBaseModel, setSelectedBaseModel] = useState("llama3.2-1b");
+  // For uploaded models: user picks the dataset
+  const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null);
+  const [showRetrainPanel, setShowRetrainPanel] = useState(false);
 
   const { data: models, isLoading } = useModels();
   const { data: datasets } = useDatasets();
-  const startTraining = useStartTraining();
-  const stopTraining = useStopTraining();
-  const pauseTraining = usePauseTraining();
+  const startTraining  = useStartTraining();
+  const stopTraining   = useStopTraining();
+  const pauseTraining  = usePauseTraining();
   const resumeTraining = useResumeTraining();
-  const deleteModel = useDeleteModel();
+  const deleteModel    = useDeleteModel();
 
-  const model = models?.find((m) => String(m.id) === params.id);
+  const model   = models?.find((m) => String(m.id) === params.id);
   const dataset = datasets?.find((d) => d.id === model?.dataset_id);
 
-  const isTraining = model?.status === "TRAINING";
-  const canTrain = model?.status === "PENDING" || model?.status === "FAILED";
+  const isTraining  = model?.status === "TRAINING";
+  const isUploaded  = !!model?.is_uploaded;
   const isUserOwned = !model?.is_base_model;
-  const baseInfo = BASE_MODEL_INFO[model?.base_model_key ?? ""];
 
-  // SSE live logs
+  /**
+   * canTrain: normal models (PENDING/FAILED) + uploaded models that are READY
+   * but have never been trained (first train run).
+   */
+  const canTrain =
+    model?.status === "PENDING" ||
+    model?.status === "FAILED" ||
+    (isUploaded && model?.status === "READY");
+
+  /**
+   * canRetrain: only after at least one completed training run.
+   * READY = uploaded, never trained — not eligible for retrain yet.
+   */
+  const canRetrain = model?.status === "COMPLETED" && isUserOwned;
+
   const { logs, isDone } = useTrainingLogs(isTraining ? (model?.id ?? null) : null, !!isTraining);
 
-  // Listen for cross-component start events to show 'Starting…' immediately
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent;
@@ -203,15 +217,33 @@ export default function ModelDetailPage() {
     return () => window.removeEventListener("training:started", handler as EventListener);
   }, [model?.id]);
 
-  // Clear the transient starting indicator when the model actually reports TRAINING
   useEffect(() => {
     if (isTraining) setIsStarting(false);
   }, [isTraining]);
 
+  const getEffectiveDataset = () => {
+    if (isUploaded) return datasets?.find((d) => d.id === selectedDatasetId) ?? null;
+    return dataset ?? null;
+  };
+
+  const getEffectiveBaseModel = () => {
+    if (isUploaded) return selectedBaseModel;
+    return model?.base_model_key || "llama3.2-1b";
+  };
+
   const handleStartTraining = () => {
-    if (!model || !dataset) { toast.error("Dataset not found for this model."); return; }
+    const eff = getEffectiveDataset();
+    if (!eff) {
+      toast.error(isUploaded ? "Please select a dataset before training." : "Dataset not found for this model.");
+      return;
+    }
     startTraining.mutate(
-      { modelId: model.id, datasetPath: dataset.file_path, baseModelKey: model.base_model_key, trainingParams: trainParams },
+      {
+        modelId: model!.id,
+        datasetPath: eff.file_path,
+        baseModelKey: getEffectiveBaseModel(),
+        trainingParams: trainParams,
+      },
       {
         onSuccess: () => { toast.success("Training started."); setShowLogs(true); },
         onError: (err) => toast.error(err.message),
@@ -222,7 +254,7 @@ export default function ModelDetailPage() {
   const handlePauseTraining = () => {
     if (!model) return;
     pauseTraining.mutate(model.id, {
-      onSuccess: () => { toast.success("Training paused."); },
+      onSuccess: () => toast.success("Training paused."),
       onError: (err) => toast.error(err.message),
     });
   };
@@ -230,12 +262,12 @@ export default function ModelDetailPage() {
   const handleResumeTraining = () => {
     if (!model) return;
     resumeTraining.mutate(model.id, {
-      onSuccess: () => { toast.success("Training resumed."); },
+      onSuccess: () => toast.success("Training resumed."),
       onError: (err) => toast.error(err.message),
     });
   };
 
-  const handleStopTrainingWithNote = () => {
+  const handleStopTraining = () => {
     if (!model) return;
     stopTraining.mutate(model.id, {
       onSuccess: () => {
@@ -308,7 +340,9 @@ export default function ModelDetailPage() {
               <div className="flex flex-col gap-0">
                 <h2 className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Model info</h2>
                 <div className="divide-y rounded-xl border bg-card">
-                  <div className="px-4"><MetaRow icon={Cpu} label="Architecture / base" value={model.base_model_key} /></div>
+                  <div className="px-4">
+                    <MetaRow icon={Cpu} label="Architecture / base" value={model.base_model_key} />
+                  </div>
                   <div className="px-4">
                     <MetaRow
                       icon={model.is_uploaded ? Upload : Layers}
@@ -334,36 +368,8 @@ export default function ModelDetailPage() {
                   )}
                   <div className="px-4"><MetaRow icon={Hash} label="Model ID" value={<span className="font-mono text-xs">#{model.id}</span>} /></div>
                   <div className="px-4"><MetaRow icon={Calendar} label="Added" value={new Date(model.created_at).toLocaleString()} /></div>
-                  {baseInfo && (
-                    <div className="px-4"><MetaRow icon={Cpu} label="Parameters" value={`${baseInfo.params} params`} /></div>
-                  )}
                 </div>
               </div>
-
-              {/* Base model details — system only */}
-              {model.is_base_model && baseInfo && (
-                <div className="rounded-xl border bg-card p-4 flex flex-col gap-3">
-                  <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">About this model</h2>
-                  <p className="text-sm text-muted-foreground leading-relaxed">{baseInfo.useCase}</p>
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Zap className="h-3.5 w-3.5" />
-                    <span>{baseInfo.speed}</span>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-xs font-medium">Best used for</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {baseInfo.goodFor.map((tag) => (
-                        <span key={tag} className="rounded-full border bg-muted/50 px-2.5 py-0.5 text-xs text-muted-foreground">
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="rounded-md bg-muted/40 px-3 py-2">
-                    <p className="text-[11px] font-mono text-muted-foreground">{baseInfo.hfId}</p>
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Right — actions */}
@@ -375,29 +381,144 @@ export default function ModelDetailPage() {
                 {isDone && (
                   <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 dark:bg-emerald-950/30">
                     <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                    <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">Model training done</p>
+                    <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">Training complete</p>
                   </div>
                 )}
 
                 {/* Progress bar */}
                 <ProgressBar logs={logs} isDone={isDone} isTraining={!!isTraining} />
 
-                {/* Training params — only shown when training hasn't started */}
+                {/* ── TRAIN (first time) ── */}
                 {canTrain && (
-                  <TrainingParamsPanel params={trainParams} onChange={setTrainParams} />
+                  <>
+                    {/* Dataset selector for uploaded models */}
+                    {isUploaded && (
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Database className="h-3.5 w-3.5" />
+                          Dataset
+                        </div>
+                        <select
+                          value={selectedDatasetId ?? ""}
+                          onChange={(e) => setSelectedDatasetId(Number(e.target.value))}
+                          className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                        >
+                          <option value="" disabled>— choose a dataset —</option>
+                          {datasets?.map((d) => (
+                            <option key={d.id} value={d.id}>{d.filename}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Base model selector for uploaded models */}
+                    {isUploaded && (
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Cpu className="h-3.5 w-3.5" />
+                          Base model for LoRA
+                        </div>
+                        <select
+                          value={selectedBaseModel}
+                          onChange={(e) => setSelectedBaseModel(e.target.value)}
+                          className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                        >
+                          {SUPPORTED_BASE_MODELS.map((m) => (
+                            <option key={m.key} value={m.key}>{m.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    <TrainingParamsPanel params={trainParams} onChange={setTrainParams} />
+
+                    <Button
+                      size="sm" className="w-full justify-start"
+                      onClick={handleStartTraining}
+                      disabled={
+                        startTraining.isPending ||
+                        isStarting ||
+                        (isUploaded ? !selectedDatasetId : !dataset)
+                      }
+                    >
+                      {startTraining.isPending || isStarting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                      {startTraining.isPending || isStarting ? "Starting…" : "Start training"}
+                    </Button>
+
+                    {isUploaded && !selectedDatasetId && (
+                      <p className="text-xs text-muted-foreground">Select a dataset above to enable training.</p>
+                    )}
+                    {!isUploaded && !dataset && (
+                      <p className="text-xs text-muted-foreground">No dataset attached — training is unavailable.</p>
+                    )}
+                  </>
                 )}
 
-                {canTrain && (
-                  <Button
-                    size="sm" className="w-full justify-start"
-                    onClick={handleStartTraining}
-                    disabled={startTraining.isPending || isStarting || !dataset}
-                  >
-                    {startTraining.isPending || isStarting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-                    {startTraining.isPending || isStarting ? "Starting…" : "Start training"}
-                  </Button>
+                {/* ── RETRAIN (after completed) ── */}
+                {canRetrain && !isTraining && (
+                  <div className="flex flex-col gap-2 border-t pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowRetrainPanel((v) => !v)}
+                      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Retrain model
+                      <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showRetrainPanel && "rotate-180")} />
+                    </button>
+
+                    {showRetrainPanel && (
+                      <>
+                        {isUploaded && (
+                          <>
+                            <div className="flex flex-col gap-1">
+                              <span className="text-xs text-muted-foreground">Dataset</span>
+                              <select
+                                value={selectedDatasetId ?? ""}
+                                onChange={(e) => setSelectedDatasetId(Number(e.target.value))}
+                                className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                              >
+                                <option value="" disabled>— choose a dataset —</option>
+                                {datasets?.map((d) => (
+                                  <option key={d.id} value={d.id}>{d.filename}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <span className="text-xs text-muted-foreground">Base model for LoRA</span>
+                              <select
+                                value={selectedBaseModel}
+                                onChange={(e) => setSelectedBaseModel(e.target.value)}
+                                className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                              >
+                                {SUPPORTED_BASE_MODELS.map((m) => (
+                                  <option key={m.key} value={m.key}>{m.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </>
+                        )}
+                        {!isUploaded && dataset && (
+                          <p className="text-xs text-muted-foreground">Dataset: {dataset.filename}</p>
+                        )}
+                        <TrainingParamsPanel params={trainParams} onChange={setTrainParams} />
+                        <Button
+                          size="sm" variant="outline" className="w-full justify-start"
+                          onClick={handleStartTraining}
+                          disabled={
+                            startTraining.isPending ||
+                            (isUploaded ? !selectedDatasetId : !dataset)
+                          }
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                          {startTraining.isPending ? "Starting…" : "Retrain"}
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 )}
 
+                {/* Pause / Stop during training */}
                 {isTraining && !isDone && (
                   <div className="flex gap-2">
                     <Button
@@ -410,7 +531,7 @@ export default function ModelDetailPage() {
                     </Button>
                     <Button
                       size="sm" variant="outline" className="flex-1 justify-start"
-                      onClick={handleStopTrainingWithNote}
+                      onClick={handleStopTraining}
                       disabled={stopTraining.isPending}
                     >
                       {stopTraining.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
@@ -419,6 +540,7 @@ export default function ModelDetailPage() {
                   </div>
                 )}
 
+                {/* Resume */}
                 {model.status === "PAUSED" && (
                   <Button
                     size="sm" variant="outline" className="w-full justify-start"
@@ -430,11 +552,13 @@ export default function ModelDetailPage() {
                   </Button>
                 )}
 
+                {/* View logs */}
                 {(isTraining || model.status === "COMPLETED" || model.status === "READY" || isDone) && (
                   <Button
                     size="sm" variant="outline" className="w-full justify-start"
                     onClick={() => setShowLogs((v) => !v)}
                   >
+                    <Zap className="h-3.5 w-3.5" />
                     {showLogs ? "Hide training logs" : "View training logs"}
                   </Button>
                 )}
@@ -445,15 +569,11 @@ export default function ModelDetailPage() {
                     Training in progress…
                   </div>
                 )}
-
-                {canTrain && !dataset && (
-                  <p className="text-xs text-muted-foreground">No dataset attached — training is unavailable.</p>
-                )}
               </div>
             </div>
           </div>
 
-          {/* Training logs — full width */}
+          {/* Training logs */}
           {showLogs && (
             <div className="mt-6">
               <TrainingLogViewer modelId={model.id} isTraining={!!isTraining} />

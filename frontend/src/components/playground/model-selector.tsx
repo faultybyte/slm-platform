@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useModels } from "@/lib/hooks/use-models";
 import { cn } from "@/lib/utils";
 
@@ -8,12 +9,21 @@ export function ModelSelector({
   onChange,
 }: {
   value: string | null;
-  onChange: (id: string) => void;
+  onChange: (id: string | null) => void;
 }) {
   const { data: models, isLoading } = useModels();
 
   const baseModels = models?.filter((m) => m.is_base_model) ?? [];
   const userModels = models?.filter((m) => !m.is_base_model) ?? [];
+
+  useEffect(() => {
+    if (!models) return;
+    const exists = models.some((m) => String(m.id) === String(value));
+    if (!exists && value !== null) {
+      onChange(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [models]);
 
   const isAvailable = (status: string) => {
     const s = status.toUpperCase();
@@ -62,3 +72,7 @@ export function ModelSelector({
     </select>
   );
 }
+
+// Clear selection if the currently selected model no longer exists
+// (e.g., it was deleted). This keeps parent state in sync with available models.
+export default ModelSelector;

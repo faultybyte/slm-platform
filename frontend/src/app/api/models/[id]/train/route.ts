@@ -12,7 +12,15 @@ export async function POST(
     return NextResponse.json({ message: "Not authenticated" }, { status: 401 });
   }
 
-  const { dataset_path, base_model_key } = await req.json();
+  const {
+    dataset_path,
+    base_model_key,
+    numEpochs,
+    learningRate,
+    batchSize,
+    warmupSteps,
+    maxSeqLength,
+  } = await req.json();
 
   try {
     const result = await backendFetchJson(
@@ -23,6 +31,11 @@ export async function POST(
         body: JSON.stringify({
           dataset_path,
           base_model_key: base_model_key ?? "llama3.2-1b",
+          num_epochs:     numEpochs     ?? 3,
+          learning_rate:  learningRate  ?? 2e-4,
+          batch_size:     batchSize     ?? 1,
+          warmup_steps:   warmupSteps   ?? 10,
+          max_seq_length: maxSeqLength  ?? 512,
         }),
         token,
       }

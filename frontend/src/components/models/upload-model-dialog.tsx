@@ -16,8 +16,6 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useUploadModel } from "@/lib/hooks/use-model-actions";
 
-const BASE_MODEL_KEYS = ["llama3.2", "qwen2.5-3b", "phi3", "mistral", "llama3", "gemma", "custom"];
-
 const ACCEPTED_EXTENSIONS = [".gguf", ".bin", ".safetensors", ".pt", ".pth"];
 
 export function UploadModelDialog({
@@ -29,7 +27,6 @@ export function UploadModelDialog({
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [displayName, setDisplayName] = useState("");
-  const [baseModelKey, setBaseModelKey] = useState("custom");
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const upload = useUploadModel();
@@ -43,7 +40,6 @@ export function UploadModelDialog({
       return;
     }
     setFile(f);
-    // Auto-fill display name from filename if empty
     if (!displayName) {
       setDisplayName(f.name.replace(/\.[^.]+$/, ""));
     }
@@ -53,7 +49,7 @@ export function UploadModelDialog({
     if (!file || !displayName.trim()) return;
 
     upload.mutate(
-      { file, displayName: displayName.trim(), baseModelKey },
+      { file, displayName: displayName.trim(), baseModelKey: "custom" },
       {
         onSuccess: () => {
           toast.success(`Model "${displayName}" added.`);
@@ -70,7 +66,6 @@ export function UploadModelDialog({
     if (!o) {
       setFile(null);
       setDisplayName("");
-      setBaseModelKey("custom");
       setError(null);
     }
     onOpenChange(o);
@@ -85,7 +80,7 @@ export function UploadModelDialog({
 
         <div className="flex flex-col gap-4">
           <p className="text-sm text-muted-foreground">
-            Add a pre-trained or fine-tuned model file. Supported formats:{" "}
+            Upload a pre-trained or fine-tuned model file. Supported formats:{" "}
             <code className="rounded bg-muted px-1 text-xs">.gguf</code>{" "}
             <code className="rounded bg-muted px-1 text-xs">.safetensors</code>{" "}
             <code className="rounded bg-muted px-1 text-xs">.bin</code>
@@ -99,20 +94,6 @@ export function UploadModelDialog({
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
             />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="upload-base-key">Architecture</Label>
-            <select
-              id="upload-base-key"
-              value={baseModelKey}
-              onChange={(e) => setBaseModelKey(e.target.value)}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-            >
-              {BASE_MODEL_KEYS.map((k) => (
-                <option key={k} value={k}>{k}</option>
-              ))}
-            </select>
           </div>
 
           {/* Drop zone */}

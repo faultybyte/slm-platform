@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import { useModels } from "@/lib/hooks/use-models";
-import { ModelCard } from "@/components/models/model-card";
+import { ModelCard } from "@/components/dashboard/models/model-card";
 import { RegisterModelDialog } from "@/components/models/register-model-dialog";
 import { UploadModelDialog } from "@/components/models/upload-model-dialog";
 import { Button } from "@/components/ui/button";
-import { Plus, Box, Upload, ChevronDown } from "lucide-react";
+import { Plus, Box, Upload, ChevronDown, Cpu, HardDrive } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,13 +15,44 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+function SectionHeading({
+  label,
+  count,
+  icon,
+  accent,
+}: {
+  label: string;
+  count: number;
+  icon: React.ReactNode;
+  accent?: string;
+}) {
+  return (
+    <div className="mb-3 flex items-center gap-2">
+      <div
+        className={`flex h-5 w-5 items-center justify-center rounded ${accent ?? "bg-muted"}`}
+      >
+        {icon}
+      </div>
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </p>
+      <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+        {count}
+      </span>
+    </div>
+  );
+}
+
 export default function ModelsPage() {
   const [registerOpen, setRegisterOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const { data: models, isLoading } = useModels();
 
-  const baseModels = models?.filter((m) => m.is_base_model) ?? [];
-  const userModels = models?.filter((m) => !m.is_base_model) ?? [];
+  const baseModels    = models?.filter((m) =>  m.is_base_model) ?? [];
+  const fineTuned     = models?.filter((m) => !m.is_base_model && !m.is_uploaded) ?? [];
+  const uploadedModels = models?.filter((m) => !m.is_base_model &&  m.is_uploaded) ?? [];
+
+  const hasAny = (models?.length ?? 0) > 0;
 
   return (
     <div className="flex h-full flex-col">
@@ -52,15 +83,17 @@ export default function ModelsPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
+        {/* Skeleton loader */}
         {isLoading && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-44 animate-pulse rounded-xl border bg-muted" />
+              <div key={i} className="h-48 animate-pulse rounded-xl border bg-muted" />
             ))}
           </div>
         )}
 
-        {!isLoading && models?.length === 0 && (
+        {/* Empty state */}
+        {!isLoading && !hasAny && (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
             <Box className="h-8 w-8 text-muted-foreground" />
             <p className="text-sm font-medium">No models yet</p>
@@ -80,28 +113,51 @@ export default function ModelsPage() {
           </div>
         )}
 
-        {!isLoading && models && models.length > 0 && (
-          <div className="flex flex-col gap-8">
-            {/* User models section */}
-            {userModels.length > 0 && (
+        {/* Model sections */}
+        {!isLoading && hasAny && (
+          <div className="flex flex-col gap-10">
+
+            {/* ── Your models (fine-tuned) ── */}
+            {fineTuned.length > 0 && (
               <section>
-                <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Your models
-                </p>
+                <SectionHeading
+                  label="Your models"
+                  count={fineTuned.length}
+                  icon={<Cpu className="h-3 w-3 text-muted-foreground" />}
+                />
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {userModels.map((model) => (
+                  {fineTuned.map((model) => (
                     <ModelCard key={model.id} model={model} />
                   ))}
                 </div>
               </section>
             )}
 
-            {/* Base / system models section */}
+            {/* ── Uploaded models ── */}
+            {uploadedModels.length > 0 && (
+              <section>
+                <SectionHeading
+                  label="Uploaded models"
+                  count={uploadedModels.length}
+                  icon={<HardDrive className="h-3 w-3 text-muted-foreground" />}
+                  accent="bg-violet-100 dark:bg-violet-950"
+                />
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {uploadedModels.map((model) => (
+                    <ModelCard key={model.id} model={model} />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* ── System / base models ── */}
             {baseModels.length > 0 && (
               <section>
-                <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  System models
-                </p>
+                <SectionHeading
+                  label="System models"
+                  count={baseModels.length}
+                  icon={<Box className="h-3 w-3 text-muted-foreground" />}
+                />
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {baseModels.map((model) => (
                     <ModelCard key={model.id} model={model} />

@@ -7,6 +7,7 @@ const variants: Record<ModelStatus, "default" | "warning" | "success" | "destruc
   READY: "success",
   COMPLETED: "success",
   FAILED: "destructive",
+  PAUSED: "warning",
 };
 
 const labels: Record<ModelStatus, string> = {
@@ -15,6 +16,7 @@ const labels: Record<ModelStatus, string> = {
   READY: "Ready",
   COMPLETED: "Ready",
   FAILED: "Failed",
+  PAUSED: "Paused",
 };
 
 export function ModelStatusBadge({ status }: { status: ModelStatus }) {
