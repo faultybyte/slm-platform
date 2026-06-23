@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Play, Cpu, Upload, Database, Calendar, Hash, Layers, Loader2, X, CheckCircle2, Zap, Info, Pause, Square,
+  ArrowLeft, Play, Cpu, Upload, Database, Calendar, Hash, Layers, Loader2, X, CheckCircle2, Zap, Info, Pause, Square, Settings2, ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ModelStatusBadge } from "@/components/models/model-status-badge";
@@ -14,6 +14,7 @@ import { useModels } from "@/lib/hooks/use-models";
 import { useDatasets } from "@/lib/hooks/use-datasets";
 import { useStartTraining, useDeleteModel, useStopTraining, usePauseTraining, useResumeTraining } from "@/lib/hooks/use-model-actions";
 import { useTrainingLogs } from "@/lib/hooks/use-training-logs";
+import type { TrainingParams } from "@/types/api";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -34,6 +35,14 @@ const BASE_MODEL_INFO: Record<string, { params: string; hfId: string; speed: str
     useCase: "Ultra-compact multilingual model. Ideal for resource-constrained deployments or rapid iteration when you need a quick fine-tune baseline.",
     goodFor: ["Multilingual tasks", "Low-resource hardware", "Rapid prototyping", "Edge deployment"],
   },
+};
+
+const DEFAULT_TRAIN_PARAMS: TrainingParams = {
+  numEpochs: 3,
+  learningRate: 2e-4,
+  batchSize: 4,
+  warmupSteps: 10,
+  maxSeqLength: 512,
 };
 
 function MetaRow({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: React.ReactNode }) {
@@ -86,12 +95,81 @@ function ProgressBar({ logs, isDone, isTraining }: { logs: string[]; isDone: boo
   );
 }
 
+function TrainingParamsPanel({
+  params,
+  onChange,
+}: {
+  params: TrainingParams;
+  onChange: (p: TrainingParams) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const sliders: { key: keyof TrainingParams; label: string; min: number; max: number; step: number }[] = [
+    { key: "numEpochs",    label: "Epochs",          min: 1,  max: 20,   step: 1  },
+    { key: "batchSize",    label: "Batch size",      min: 1,  max: 32,   step: 1  },
+    { key: "warmupSteps",  label: "Warmup steps",    min: 0,  max: 200,  step: 5  },
+    { key: "maxSeqLength", label: "Max seq length",  min: 64, max: 2048, step: 64 },
+  ];
+
+  // learningRate stored as actual value (e.g. 2e-4), slider works in 1e-5 increments 1–20
+  const lrSliderValue = Math.round((params.learningRate ?? 2e-4) / 1e-5);
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border bg-muted/20">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center justify-between px-3 py-2 text-xs font-medium hover:bg-muted/40 rounded-lg transition-colors"
+      >
+        <span className="flex items-center gap-1.5 text-muted-foreground">
+          <Settings2 className="h-3.5 w-3.5" />
+          Training parameters
+        </span>
+        <ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform", open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <div className="flex flex-col gap-3 border-t px-3 pb-3 pt-3">
+          {sliders.map(({ key, label, min, max, step }) => (
+            <div key={key} className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">{label}</span>
+                <span className="font-medium tabular-nums">{params[key] as number}</span>
+              </div>
+              <Slider
+                min={min} max={max} step={step}
+                value={[params[key] as number]}
+                onValueChange={([v]) => onChange({ ...params, [key]: v })}
+              />
+            </div>
+          ))}
+
+          {/* Learning rate — special handling */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">Learning rate</span>
+              <span className="font-medium tabular-nums">{(params.learningRate ?? 2e-4).toExponential(0)}</span>
+            </div>
+            <Slider
+              min={1} max={20} step={1}
+              value={[lrSliderValue]}
+              onValueChange={([v]) => onChange({ ...params, learningRate: v * 1e-5 })}
+            />
+            <span className="text-[10px] text-muted-foreground">Range: 1×10⁻⁵ → 2×10⁻⁴</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ModelDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [showLogs, setShowLogs] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
+  const [trainParams, setTrainParams] = useState<TrainingParams>(DEFAULT_TRAIN_PARAMS);
 
   const { data: models, isLoading } = useModels();
   const { data: datasets } = useDatasets();
@@ -119,7 +197,6 @@ export default function ModelDetailPage() {
       const payload = ce?.detail as { modelId?: number } | undefined;
       if (!payload || payload.modelId !== model?.id) return;
       setIsStarting(true);
-      // clear after a short timeout or when model status changes to TRAINING
       setTimeout(() => setIsStarting(false), 5000);
     };
     window.addEventListener("training:started", handler as EventListener);
@@ -134,7 +211,7 @@ export default function ModelDetailPage() {
   const handleStartTraining = () => {
     if (!model || !dataset) { toast.error("Dataset not found for this model."); return; }
     startTraining.mutate(
-      { modelId: model.id, datasetPath: dataset.file_path, baseModelKey: model.base_model_key },
+      { modelId: model.id, datasetPath: dataset.file_path, baseModelKey: model.base_model_key, trainingParams: trainParams },
       {
         onSuccess: () => { toast.success("Training started."); setShowLogs(true); },
         onError: (err) => toast.error(err.message),
@@ -158,20 +235,10 @@ export default function ModelDetailPage() {
     });
   };
 
-  const handleStopTraining = () => {
-    if (!model) return;
-    stopTraining.mutate(model.id, {
-      onSuccess: () => { toast.success("Training stopped."); },
-      onError: (err) => toast.error(err.message),
-    });
-  };
-
-  // When we stop training, immediately append a synthetic log line so UI shows it
   const handleStopTrainingWithNote = () => {
     if (!model) return;
     stopTraining.mutate(model.id, {
       onSuccess: () => {
-        // Append client-side note visible immediately
         window.dispatchEvent(new CustomEvent("training:note", { detail: { modelId: model.id, line: `[${new Date().toLocaleTimeString()}] SYSTEM: Training stopped by user.` } }));
         toast.success("Training stopped.");
       },
@@ -314,6 +381,11 @@ export default function ModelDetailPage() {
 
                 {/* Progress bar */}
                 <ProgressBar logs={logs} isDone={isDone} isTraining={!!isTraining} />
+
+                {/* Training params — only shown when training hasn't started */}
+                {canTrain && (
+                  <TrainingParamsPanel params={trainParams} onChange={setTrainParams} />
+                )}
 
                 {canTrain && (
                   <Button

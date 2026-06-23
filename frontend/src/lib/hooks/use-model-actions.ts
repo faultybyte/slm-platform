@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { modelsQueryKey } from "@/lib/hooks/use-models";
-import type { ModelSummary, RegisterModelRequest } from "@/types/api";
+import type { ModelSummary, RegisterModelRequest, TrainingParams } from "@/types/api";
 
 export function useRegisterModel() {
   const queryClient = useQueryClient();
@@ -28,16 +28,19 @@ export function useStartTraining() {
       modelId,
       datasetPath,
       baseModelKey,
+      trainingParams,
     }: {
       modelId: number;
       datasetPath: string;
       baseModelKey?: string;
+      trainingParams?: TrainingParams;
     }) =>
       apiClient(`/api/models/${modelId}/train`, {
         method: "POST",
         body: JSON.stringify({
           dataset_path: datasetPath,
           base_model_key: baseModelKey ?? "tinyllama",
+          ...(trainingParams ?? {}),
         }),
       }),
     onMutate: async (variables) => {
@@ -48,7 +51,6 @@ export function useStartTraining() {
         if (!old) return old;
         return (old as any).map((m: any) => (m.id === mId ? { ...m, status: "TRAINING" } : m));
       });
-      // Notify other UI pieces that training has started so they can show starting state immediately
       try {
         window.dispatchEvent(new CustomEvent("training:started", { detail: { modelId: mId } }));
       } catch {}
