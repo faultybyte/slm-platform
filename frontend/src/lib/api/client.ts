@@ -31,7 +31,15 @@ export async function apiClient<T>(
     let fieldErrors: Record<string, string> | undefined;
     try {
       const body = await res.json();
-      message = body?.message ?? message;
+      // FastAPI returns validation errors in 'detail' field
+      if (Array.isArray(body?.detail)) {
+        const errors = body.detail.map((e: any) => `${e.loc?.join('.')}: ${e.msg}`).join('; ');
+        message = `Validation error: ${errors}`;
+      } else if (typeof body?.detail === 'string') {
+        message = body.detail;
+      } else {
+        message = body?.message ?? message;
+      }
       fieldErrors = body?.fieldErrors;
     } catch {
       // ignore parse failure, keep default message

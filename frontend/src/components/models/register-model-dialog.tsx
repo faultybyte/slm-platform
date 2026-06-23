@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { useRegisterModel } from "@/lib/hooks/use-model-actions";
 import { useDatasets } from "@/lib/hooks/use-datasets";
 
-const BASE_MODELS = ["tinyllama", "qwen", "phi3", "mistral"];
+const BASE_MODELS = ["llama3.2-1b", "qwen2.5-3b", "deepseek-r1-distill-qwen-1.5b", "gemma3-1b"];
 
 export function RegisterModelDialog({
   open,
@@ -20,7 +20,7 @@ export function RegisterModelDialog({
 }) {
   const [displayName, setDisplayName] = useState("");
   const [datasetId, setDatasetId] = useState<string>("");
-  const [baseModelKey, setBaseModelKey] = useState("tinyllama");
+  const [baseModelKey, setBaseModelKey] = useState("llama3.2-1b");
 
   const { data: datasets, isLoading: datasetsLoading } = useDatasets();
   const register = useRegisterModel();
@@ -39,7 +39,7 @@ export function RegisterModelDialog({
           onOpenChange(false);
           setDisplayName("");
           setDatasetId("");
-          setBaseModelKey("tinyllama");
+          setBaseModelKey("llama3.2-1b");
         },
         onError: (err) => toast.error(err.message),
       }

@@ -40,6 +40,9 @@ class Model(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True) 
     display_name = Column(String, nullable=False)
     base_model_path = Column(String, nullable=False)
+    base_model_key = Column(String, nullable=True)
+    dataset_id = Column(Integer, nullable=True)
+    worker_pid = Column(Integer, nullable=True)
     adapter_path = Column(String, nullable=True)
     status = Column(String, default="PENDING", nullable=False)
     

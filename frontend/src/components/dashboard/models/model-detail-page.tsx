@@ -1,10 +1,10 @@
 "use client";
-
+import { Slider } from "@/components/ui/slider";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Play, Cpu, Upload, Database, Calendar, Hash, Layers, Loader2, X, CheckCircle2, Zap, Info,
+  ArrowLeft, Play, Cpu, Upload, Database, Calendar, Hash, Layers, Loader2, X, CheckCircle2, Zap, Info, Pause, Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ModelStatusBadge } from "@/components/models/model-status-badge";
@@ -12,7 +12,7 @@ import { ModelStatusDot } from "@/components/dashboard/model-status-dot";
 import { TrainingLogViewer } from "@/components/models/training-log-viewer";
 import { useModels } from "@/lib/hooks/use-models";
 import { useDatasets } from "@/lib/hooks/use-datasets";
-import { useStartTraining, useDeleteModel } from "@/lib/hooks/use-model-actions";
+import { useStartTraining, useDeleteModel, useStopTraining, usePauseTraining, useResumeTraining } from "@/lib/hooks/use-model-actions";
 import { useTrainingLogs } from "@/lib/hooks/use-training-logs";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -89,12 +89,16 @@ function ProgressBar({ logs, isDone, isTraining }: { logs: string[]; isDone: boo
 export default function ModelDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const [showLogs, setShowLogs] = useState(false);
+  const [showLogs, setShowLogs] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
 
   const { data: models, isLoading } = useModels();
   const { data: datasets } = useDatasets();
   const startTraining = useStartTraining();
+  const stopTraining = useStopTraining();
+  const pauseTraining = usePauseTraining();
+  const resumeTraining = useResumeTraining();
   const deleteModel = useDeleteModel();
 
   const model = models?.find((m) => String(m.id) === params.id);
@@ -108,15 +112,71 @@ export default function ModelDetailPage() {
   // SSE live logs
   const { logs, isDone } = useTrainingLogs(isTraining ? (model?.id ?? null) : null, !!isTraining);
 
+  // Listen for cross-component start events to show 'Starting…' immediately
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent;
+      const payload = ce?.detail as { modelId?: number } | undefined;
+      if (!payload || payload.modelId !== model?.id) return;
+      setIsStarting(true);
+      // clear after a short timeout or when model status changes to TRAINING
+      setTimeout(() => setIsStarting(false), 5000);
+    };
+    window.addEventListener("training:started", handler as EventListener);
+    return () => window.removeEventListener("training:started", handler as EventListener);
+  }, [model?.id]);
+
+  // Clear the transient starting indicator when the model actually reports TRAINING
+  useEffect(() => {
+    if (isTraining) setIsStarting(false);
+  }, [isTraining]);
+
   const handleStartTraining = () => {
     if (!model || !dataset) { toast.error("Dataset not found for this model."); return; }
     startTraining.mutate(
-      { modelId: model.id, datasetPath: dataset.file_path },
+      { modelId: model.id, datasetPath: dataset.file_path, baseModelKey: model.base_model_key },
       {
         onSuccess: () => { toast.success("Training started."); setShowLogs(true); },
         onError: (err) => toast.error(err.message),
       }
     );
+  };
+
+  const handlePauseTraining = () => {
+    if (!model) return;
+    pauseTraining.mutate(model.id, {
+      onSuccess: () => { toast.success("Training paused."); },
+      onError: (err) => toast.error(err.message),
+    });
+  };
+
+  const handleResumeTraining = () => {
+    if (!model) return;
+    resumeTraining.mutate(model.id, {
+      onSuccess: () => { toast.success("Training resumed."); },
+      onError: (err) => toast.error(err.message),
+    });
+  };
+
+  const handleStopTraining = () => {
+    if (!model) return;
+    stopTraining.mutate(model.id, {
+      onSuccess: () => { toast.success("Training stopped."); },
+      onError: (err) => toast.error(err.message),
+    });
+  };
+
+  // When we stop training, immediately append a synthetic log line so UI shows it
+  const handleStopTrainingWithNote = () => {
+    if (!model) return;
+    stopTraining.mutate(model.id, {
+      onSuccess: () => {
+        // Append client-side note visible immediately
+        window.dispatchEvent(new CustomEvent("training:note", { detail: { modelId: model.id, line: `[${new Date().toLocaleTimeString()}] SYSTEM: Training stopped by user.` } }));
+        toast.success("Training stopped.");
+      },
+      onError: (err) => toast.error(err.message),
+    });
   };
 
   const handleDelete = () => {
@@ -259,10 +319,42 @@ export default function ModelDetailPage() {
                   <Button
                     size="sm" className="w-full justify-start"
                     onClick={handleStartTraining}
-                    disabled={startTraining.isPending || !dataset}
+                    disabled={startTraining.isPending || isStarting || !dataset}
                   >
-                    {startTraining.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-                    {startTraining.isPending ? "Starting…" : "Start training"}
+                    {startTraining.isPending || isStarting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                    {startTraining.isPending || isStarting ? "Starting…" : "Start training"}
+                  </Button>
+                )}
+
+                {isTraining && !isDone && (
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm" variant="outline" className="flex-1 justify-start"
+                      onClick={handlePauseTraining}
+                      disabled={pauseTraining.isPending}
+                    >
+                      {pauseTraining.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pause className="h-3.5 w-3.5" />}
+                      {pauseTraining.isPending ? "Pausing…" : "Pause"}
+                    </Button>
+                    <Button
+                      size="sm" variant="outline" className="flex-1 justify-start"
+                      onClick={handleStopTrainingWithNote}
+                      disabled={stopTraining.isPending}
+                    >
+                      {stopTraining.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
+                      {stopTraining.isPending ? "Stopping…" : "Stop"}
+                    </Button>
+                  </div>
+                )}
+
+                {model.status === "PAUSED" && (
+                  <Button
+                    size="sm" variant="outline" className="w-full justify-start"
+                    onClick={handleResumeTraining}
+                    disabled={resumeTraining.isPending}
+                  >
+                    {resumeTraining.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                    {resumeTraining.isPending ? "Resuming…" : "Resume training"}
                   </Button>
                 )}
 

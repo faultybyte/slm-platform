@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useUploadModel } from "@/lib/hooks/use-model-actions";
 
-const BASE_MODEL_KEYS = ["tinyllama", "qwen", "phi3", "mistral", "llama3", "gemma", "custom"];
+const BASE_MODEL_KEYS = ["llama3.2", "qwen2.5-3b", "phi3", "mistral", "llama3", "gemma", "custom"];
 
 const ACCEPTED_EXTENSIONS = [".gguf", ".bin", ".safetensors", ".pt", ".pth"];
 
@@ -95,7 +95,7 @@ export function UploadModelDialog({
             <Label htmlFor="upload-model-name">Display name</Label>
             <Input
               id="upload-model-name"
-              placeholder="e.g. HRMind-GGUF-Q4"
+              placeholder="e.g. Cogniwide-GGUF-Q4"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
             />

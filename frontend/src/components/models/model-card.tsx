@@ -40,7 +40,7 @@ export function ModelCard({ model }: { model: ModelSummary }) {
       return;
     }
     startTraining.mutate(
-      { modelId: model.id, datasetPath: dataset.file_path },
+      { modelId: model.id, datasetPath: dataset.file_path, baseModelKey: model.base_model_key },
       {
         onSuccess: () => toast.success("Training started."),
         onError: (err) => toast.error(err.message),

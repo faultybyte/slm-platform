@@ -40,9 +40,24 @@ export function useStartTraining() {
           base_model_key: baseModelKey ?? "tinyllama",
         }),
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: modelsQueryKey });
+    onMutate: async (variables) => {
+      const mId = (variables as any)?.modelId as number;
+      await queryClient.cancelQueries({ queryKey: modelsQueryKey });
+      const previous = queryClient.getQueryData(modelsQueryKey);
+      queryClient.setQueryData(modelsQueryKey, (old: any) => {
+        if (!old) return old;
+        return (old as any).map((m: any) => (m.id === mId ? { ...m, status: "TRAINING" } : m));
+      });
+      // Notify other UI pieces that training has started so they can show starting state immediately
+      try {
+        window.dispatchEvent(new CustomEvent("training:started", { detail: { modelId: mId } }));
+      } catch {}
+      return { previous };
     },
+    onError: (_err, _variables, context: any) => {
+      queryClient.setQueryData(modelsQueryKey, context?.previous);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: modelsQueryKey }),
   });
 }
 
@@ -60,6 +75,66 @@ export function useDeleteModel() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: modelsQueryKey });
     },
+  });
+}
+
+export function useStopTraining() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (modelId: number) =>
+      fetch(`/api/models/${modelId}/stop`, { method: "POST" }).then(async (res) => {
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message ?? "Stop failed");
+        }
+        return res.json().catch(() => ({}));
+      }),
+    onMutate: async (modelId: number) => {
+      await queryClient.cancelQueries({ queryKey: modelsQueryKey });
+      const previous = queryClient.getQueryData(modelsQueryKey);
+      queryClient.setQueryData(modelsQueryKey, (old: any) => {
+        if (!old) return old;
+        return (old as any).map((m: any) => (m.id === modelId ? { ...m, status: "FAILED" } : m));
+      });
+      return { previous };
+    },
+    onError: (_err, _variables, context: any) => {
+      queryClient.setQueryData(modelsQueryKey, context?.previous);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: modelsQueryKey }),
+  });
+}
+
+export function usePauseTraining() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (modelId: number) =>
+      fetch(`/api/models/${modelId}/pause`, { method: "POST" }).then(async (res) => {
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message ?? "Pause failed");
+        }
+        return res.json().catch(() => ({}));
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: modelsQueryKey }),
+  });
+}
+
+export function useResumeTraining() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (modelId: number) =>
+      fetch(`/api/models/${modelId}/resume`, { method: "POST" }).then(async (res) => {
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message ?? "Resume failed");
+        }
+        return res.json().catch(() => ({}));
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: modelsQueryKey }),
   });
 }
 

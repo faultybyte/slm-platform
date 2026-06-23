@@ -4,8 +4,10 @@ from app.models import Model
 
 # Assuming this lives in your training.py or config, import it here
 SUPPORTED_MODELS = {
-    "tinyllama": {"display_name": "Base: TinyLlama 1.1B", "gguf_path": "storage/models/tinyllama.gguf"},
-    # Add phi2, llama3, etc., here later
+    "llama3.2-1b": {"display_name": "Base: Llama 3.2 1B", "gguf_path": "storage/models/llama3.2-1B.gguf"},
+    "deepseek-r1-distill-qwen-1.5b": {"display_name": "Base: Deepseek-R1-Distill-Qwen-1.5B", "gguf_path": "storage/models/Deepseek-R1-Distill-Qwen-1.5B.gguf"},
+    "gemma3-1b": {"display_name": "Base: Gemma 3 1B", "gguf_path": "storage/models/gemma3-1B.gguf"},
+    "qwen2.5-3b": {"display_name": "Base: Qwen2.5 3B", "gguf_path": "storage/models/Qwen2.5-3B.gguf"},
 }
 
 async def seed_system_models():

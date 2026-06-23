@@ -117,3 +117,25 @@ async def list_datasets(db: AsyncSession = Depends(get_db), user_id: int = Depen
         }
         for d in datasets
     ]
+@router.delete("/{dataset_id}", status_code=204)
+async def delete_dataset(
+    dataset_id: int,
+    db: AsyncSession = Depends(get_db),
+    user_id: int = Depends(get_current_user)
+):
+    """Permanently deletes a dataset owned by the current user."""
+    result = await db.execute(
+        select(Dataset).where(Dataset.id == dataset_id, Dataset.user_id == user_id)
+    )
+    dataset = result.scalar_one_or_none()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found.")
+
+    # Remove file from disk if it exists
+    try:
+        Path(dataset.file_path).unlink(missing_ok=True)
+    except Exception:
+        pass  # Don't block DB deletion if file is already gone
+
+    await db.delete(dataset)
+    await db.commit()

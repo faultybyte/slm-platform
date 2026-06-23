@@ -122,7 +122,15 @@ export function useChat({
         });
 
         if (!res.ok || !res.body) {
-          throw new Error(`Stream failed: ${res.status}`);
+          let text = "";
+          try {
+            text = await res.text();
+          } catch {}
+          toast.error(text || `Stream failed: ${res.status}`);
+          // Clean up optimistic assistant placeholder
+          setMessages((prev) => prev.slice(0, -1));
+          setIsStreaming(false);
+          return;
         }
 
         const reader = res.body.getReader();
@@ -156,7 +164,21 @@ export function useChat({
               continue;
             }
 
-            // Only process "message" events — ignore anything else
+            // Process message events and error events
+            if (currentEventName === "error") {
+              try {
+                const errObj = JSON.parse(data);
+                const detail = errObj.detail ?? errObj.message ?? data;
+                toast.error(String(detail));
+              } catch {
+                toast.error(data);
+              }
+              // stop streaming on backend error
+              setIsStreaming(false);
+              abortRef.current?.abort();
+              return;
+            }
+
             if (currentEventName !== "message") continue;
 
             const data = line.slice(6).trim();

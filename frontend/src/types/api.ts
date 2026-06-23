@@ -54,7 +54,7 @@ export interface ApiErrorShape {
  * a field name here propagates everywhere.
  */
 
-export type ModelStatus = "PENDING" | "TRAINING" | "COMPLETED" | "FAILED" | "READY";
+export type ModelStatus = "PENDING" | "TRAINING" | "PAUSED" | "COMPLETED" | "FAILED" | "READY";
 
 export interface ModelSummary {
   id: number;
@@ -106,4 +106,12 @@ export interface RegisterModelRequest {
   display_name: string;
   dataset_id: number;
   base_model_key?: string;
+}
+
+export interface TrainingParams {
+  numEpochs?: number;
+  learningRate?: number;
+  batchSize?: number;
+  warmupSteps?: number;
+  maxSeqLength?: number;
 }
