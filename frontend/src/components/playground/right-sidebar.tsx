@@ -98,35 +98,6 @@ export function RightSidebar() {
           }}
         />
       </div>
-
-      <Separator />
-
-      {/* Stream toggle */}
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <Label htmlFor="stream-toggle" className="cursor-pointer">Streaming</Label>
-          <button
-            id="stream-toggle"
-            role="switch"
-            aria-checked={config.stream ?? true}
-            onClick={() => updateConfig({ stream: !(config.stream ?? true) })}
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
-              (config.stream ?? true) ? "bg-primary" : "bg-muted"
-            }`}
-          >
-            <span
-              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
-                (config.stream ?? true) ? "translate-x-[18px]" : "translate-x-[3px]"
-              }`}
-            />
-          </button>
-        </div>
-        <p className="text-[11px] text-muted-foreground">
-          {(config.stream ?? true)
-            ? "Tokens stream as they are generated — lower perceived latency."
-            : "Full response is returned at once after generation completes."}
-        </p>
-      </div>
     </aside>
   );
 }
