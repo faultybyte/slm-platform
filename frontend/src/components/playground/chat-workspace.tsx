@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageList } from "@/components/playground/message-list";
@@ -14,6 +15,14 @@ import { useChat } from "@/lib/hooks/use-chat";
 export function ChatWorkspace() {
   const [modelId, setModelId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<number | null>(null);
+  const searchParams = useSearchParams();
+
+  // Keep conversationId in sync with ?conversation=<id>
+  useEffect(() => {
+    const param = searchParams.get("conversation");
+    const parsed = param ? Number(param) : null;
+    if (parsed && parsed !== conversationId) setConversationId(parsed);
+  }, [searchParams]);
   const { config } = useChatConfig();
   const queryClient = useQueryClient();
   const conversationsQueryKey = ["conversations"] as const;

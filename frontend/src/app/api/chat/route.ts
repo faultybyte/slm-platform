@@ -13,12 +13,21 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
 
-  const upstream = await backendFetch("/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    token,
-    body: JSON.stringify(body),
-  });
+  let upstream: Response;
+  try {
+    upstream = await backendFetch("/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      token,
+      body: JSON.stringify(body),
+    });
+  } catch (err: any) {
+    const isHeadersTimeout = err?.cause?.code === "UND_ERR_HEADERS_TIMEOUT" || String(err?.message).includes("Headers Timeout");
+    const msg = isHeadersTimeout
+      ? "Upstream timed out while preparing the response headers. The request may still be processing on the server."
+      : "Failed to contact upstream service.";
+    return new Response(JSON.stringify({ message: msg }), { status: 504, headers: { "Content-Type": "application/json" } });
+  }
 
   // Stream the FastAPI SSE response straight through — no buffering.
   // backendFetch returns the raw Response so we can pipe ReadableStream directly.

@@ -1,6 +1,14 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 import docker
+import logging
+
+# Configure logging to see docker_manager and other debug output
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 from app.routes import auth, training, datasets, inference, api_keys, conversations, documents
 from app.seeder import seed_system_models

@@ -60,6 +60,7 @@ class Conversation(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     model_id = Column(Integer, ForeignKey("models.id", ondelete="SET NULL"), nullable=True)
     session_title = Column(String, default="New Chat", nullable=False)
+    pinned = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     user = relationship("User", back_populates="conversations")

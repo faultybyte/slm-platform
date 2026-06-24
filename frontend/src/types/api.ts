@@ -78,6 +78,8 @@ export interface ConversationSummary {
   conversation_id: number;
   title: string;
   model_id?: number;
+  /** Optional pin flag persisted by the backend */
+  pinned?: boolean;
   updated_at: string;
   created_at: string;
 }

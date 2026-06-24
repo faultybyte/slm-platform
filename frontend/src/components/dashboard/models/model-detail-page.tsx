@@ -21,13 +21,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const BASE_MODEL_INFO: Record<string, { params: string; hfId: string; speed: string; useCase: string; goodFor: string[] }> = {
-  tinyllama: {
-    params: "1.1B",
-    hfId: "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-    speed: "Fast — runs on CPU",
-    useCase: "Well-rounded compact model tuned for chat. Best for Q&A, classification, and short-form generation tasks where inference speed matters more than raw capability.",
-    goodFor: ["Q&A / FAQ bots", "Text classification", "Short-form generation", "CPU inference"],
-  },
+  
   qwen: {
     params: "0.5B",
     hfId: "Qwen/Qwen1.5-0.5B-Chat",

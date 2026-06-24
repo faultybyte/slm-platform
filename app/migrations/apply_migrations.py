@@ -9,7 +9,8 @@ async def apply():
             await conn.execute(text("ALTER TABLE models ADD COLUMN IF NOT EXISTS base_model_key VARCHAR;"))
             await conn.execute(text("ALTER TABLE models ADD COLUMN IF NOT EXISTS dataset_id INTEGER;"))
             await conn.execute(text("ALTER TABLE models ADD COLUMN IF NOT EXISTS worker_pid INTEGER;"))
-            print("Migrations applied: added base_model_key, dataset_id, worker_pid")
+            await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS pinned BOOLEAN DEFAULT false NOT NULL;"))
+            print("Migrations applied: added base_model_key, dataset_id, worker_pid, pinned")
         except Exception as e:
             print("Migration failed:", e)
 

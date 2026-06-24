@@ -6,6 +6,10 @@ import "./globals.css";
 import AppThemeProvider from "@/components/providers/theme-provider";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Geist } from "next/font/google";
+import { cn } from "@/lib/utils";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
   title: "SLM Platform",
@@ -20,7 +24,7 @@ export default function RootLayout({
   return (
    <html
   lang="en"
-  className="h-full antialiased"
+  className={cn("h-full antialiased", "font-sans", geist.variable)}
   suppressHydrationWarning
 >
   <body className="min-h-full flex flex-col font-sans">

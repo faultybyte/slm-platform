@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import type { ConversationMessage } from "@/types/api";
 import type { ChatConfig } from "@/lib/chat-config";
@@ -28,6 +28,7 @@ export function useChat({
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const prevConversationIdRef = useRef<number | null>(null);
 
   const uploadDocuments = useCallback(async (convId: number, files: File[]) => {
     setIsUploadingDoc(true);
@@ -163,6 +164,8 @@ export function useChat({
               if (line === "") currentEventName = "";
               continue;
             }
+             
+            const data = line.slice(6).trim();
 
             // Process message events and error events
             if (currentEventName === "error") {
@@ -180,8 +183,6 @@ export function useChat({
             }
 
             if (currentEventName !== "message") continue;
-
-            const data = line.slice(6).trim();
 
             try {
               const chunk = JSON.parse(data);
@@ -233,6 +234,51 @@ export function useChat({
   const stopStreaming = useCallback(() => {
     abortRef.current?.abort();
   }, []);
+
+  // Load messages when a conversation is selected
+  useEffect(() => {
+    if (!conversationId) {
+      setMessages([]);
+      prevConversationIdRef.current = null;
+      return;
+    }
+
+    // Only abort if we're switching to a different conversation (not on initial load)
+    // prevConversationIdRef tracks the last conversation we loaded/streamed to
+    if (prevConversationIdRef.current !== null && prevConversationIdRef.current !== conversationId) {
+      abortRef.current?.abort();
+      setIsStreaming(false);
+    }
+    prevConversationIdRef.current = conversationId;
+
+    const ctrl = new AbortController();
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/conversations/${conversationId}/messages`, {
+          signal: ctrl.signal,
+        });
+
+        if (!res.ok) {
+          let txt = "";
+          try {
+            txt = await res.text();
+          } catch {}
+          toast.error(txt || `Failed to load messages: ${res.status}`);
+          return;
+        }
+
+        const msgs: ConversationMessage[] = await res.json();
+        setMessages(msgs.map((m) => ({ ...m, clientId: crypto.randomUUID() })));
+      } catch (err) {
+        if ((err as Error).name !== "AbortError") {
+          toast.error("Failed to load conversation messages.");
+        }
+      }
+    })();
+
+    return () => ctrl.abort();
+  }, [conversationId]);
 
   const addPendingFile = useCallback((file: File) => {
     setPendingFiles((prev) => [...prev, file]);

@@ -38,12 +38,7 @@ const BASE_MODEL_INFO: Record<
   string,
   { params: string; useCase: string; speed: string }
 > = {
-  tinyllama: {
-    params: "1.1B",
-    speed: "Fast · CPU-friendly",
-    useCase:
-      "Great for Q&A, classification, and short-form generation on low-resource hardware.",
-  },
+  
   qwen: {
     params: "0.5B",
     speed: "Very fast · minimal VRAM",
