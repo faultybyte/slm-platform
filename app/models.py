@@ -18,6 +18,8 @@ class User(Base):
     models = relationship("Model", back_populates="user", cascade="all, delete-orphan")
     conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
     total_tokens_consumed = Column(Integer, default=0)
+    # JSON-serialized user preferences (system prompt, default model, execution params)
+    settings = Column(Text, nullable=True)
 
 
 class Dataset(Base):

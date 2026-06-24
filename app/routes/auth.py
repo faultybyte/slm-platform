@@ -43,6 +43,13 @@ async def login(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
     access_token = create_access_token(data={"sub": str(user.id), "email": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
 
+
+@router.post("/logout")
+async def logout():
+    # Frontend expects a POST /auth/logout to end session client-side.
+    # Server-side JWTs are stateless, so just return success.
+    return {"ok": True}
+
 @router.get("/me")
 async def get_current_user_profile(
     db: AsyncSession = Depends(get_db), 

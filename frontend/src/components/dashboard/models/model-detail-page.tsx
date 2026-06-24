@@ -187,23 +187,25 @@ export default function ModelDetailPage() {
   const isTraining  = model?.status === "TRAINING";
   const isUploaded  = !!model?.is_uploaded;
   const isUserOwned = !model?.is_base_model;
+  const trainingActive = !!isTraining || isStarting;
 
   /**
    * canTrain: normal models (PENDING/FAILED) + uploaded models that are READY
    * but have never been trained (first train run).
    */
   const canTrain =
-    model?.status === "PENDING" ||
-    model?.status === "FAILED" ||
-    (isUploaded && model?.status === "READY");
+    !trainingActive &&
+    (model?.status === "PENDING" ||
+      model?.status === "FAILED" ||
+      (isUploaded && model?.status === "READY"));
 
   /**
    * canRetrain: only after at least one completed training run.
    * READY = uploaded, never trained — not eligible for retrain yet.
    */
-  const canRetrain = model?.status === "COMPLETED" && isUserOwned;
+  const canRetrain = !trainingActive && model?.status === "COMPLETED" && isUserOwned;
 
-  const { logs, isDone } = useTrainingLogs(isTraining ? (model?.id ?? null) : null, !!isTraining);
+  const { logs, isDone } = useTrainingLogs(trainingActive ? (model?.id ?? null) : null, trainingActive);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -211,15 +213,16 @@ export default function ModelDetailPage() {
       const payload = ce?.detail as { modelId?: number } | undefined;
       if (!payload || payload.modelId !== model?.id) return;
       setIsStarting(true);
-      setTimeout(() => setIsStarting(false), 5000);
     };
     window.addEventListener("training:started", handler as EventListener);
     return () => window.removeEventListener("training:started", handler as EventListener);
   }, [model?.id]);
 
   useEffect(() => {
-    if (isTraining) setIsStarting(false);
-  }, [isTraining]);
+    if (isTraining || isDone || model?.status === "FAILED") {
+      window.setTimeout(() => setIsStarting(false), 0);
+    }
+  }, [isTraining, isDone, model?.status]);
 
   const getEffectiveDataset = () => {
     if (isUploaded) return datasets?.find((d) => d.id === selectedDatasetId) ?? null;
@@ -237,16 +240,18 @@ export default function ModelDetailPage() {
       toast.error(isUploaded ? "Please select a dataset before training." : "Dataset not found for this model.");
       return;
     }
+    if (!model || trainingActive || startTraining.isPending) return;
+    setIsStarting(true);
     startTraining.mutate(
       {
-        modelId: model!.id,
+        modelId: model.id,
         datasetPath: eff.file_path,
         baseModelKey: getEffectiveBaseModel(),
         trainingParams: trainParams,
       },
       {
         onSuccess: () => { toast.success("Training started."); setShowLogs(true); },
-        onError: (err) => toast.error(err.message),
+        onError: (err) => { toast.error(err.message); setIsStarting(false); },
       }
     );
   };
@@ -386,7 +391,7 @@ export default function ModelDetailPage() {
                 )}
 
                 {/* Progress bar */}
-                <ProgressBar logs={logs} isDone={isDone} isTraining={!!isTraining} />
+                <ProgressBar logs={logs} isDone={isDone} isTraining={trainingActive} />
 
                 {/* ── TRAIN (first time) ── */}
                 {canTrain && (
@@ -455,7 +460,7 @@ export default function ModelDetailPage() {
                 )}
 
                 {/* ── RETRAIN (after completed) ── */}
-                {canRetrain && !isTraining && (
+                {canRetrain && (
                   <div className="flex flex-col gap-2 border-t pt-3">
                     <button
                       type="button"
@@ -507,6 +512,7 @@ export default function ModelDetailPage() {
                           onClick={handleStartTraining}
                           disabled={
                             startTraining.isPending ||
+                            trainingActive ||
                             (isUploaded ? !selectedDatasetId : !dataset)
                           }
                         >
@@ -519,7 +525,7 @@ export default function ModelDetailPage() {
                 )}
 
                 {/* Pause / Stop during training */}
-                {isTraining && !isDone && (
+                {trainingActive && !isDone && (
                   <div className="flex gap-2">
                     <Button
                       size="sm" variant="outline" className="flex-1 justify-start"
@@ -553,7 +559,7 @@ export default function ModelDetailPage() {
                 )}
 
                 {/* View logs */}
-                {(isTraining || model.status === "COMPLETED" || model.status === "READY" || isDone) && (
+                {(trainingActive || model.status === "COMPLETED" || model.status === "READY" || isDone) && (
                   <Button
                     size="sm" variant="outline" className="w-full justify-start"
                     onClick={() => setShowLogs((v) => !v)}
@@ -563,7 +569,7 @@ export default function ModelDetailPage() {
                   </Button>
                 )}
 
-                {isTraining && !isDone && (
+                {trainingActive && !isDone && (
                   <div className="flex items-center gap-1.5 text-xs text-amber-600">
                     <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
                     Training in progress…
@@ -576,7 +582,7 @@ export default function ModelDetailPage() {
           {/* Training logs */}
           {showLogs && (
             <div className="mt-6">
-              <TrainingLogViewer modelId={model.id} isTraining={!!isTraining} />
+              <TrainingLogViewer modelId={model.id} isTraining={trainingActive} />
             </div>
           )}
         </div>

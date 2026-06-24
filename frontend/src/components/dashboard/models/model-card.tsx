@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -57,11 +57,9 @@ const BASE_MODEL_INFO: Record<
 function InlineProgress({
   logs,
   isDone,
-  isTraining,
 }: {
   logs: string[];
   isDone: boolean;
-  isTraining: boolean;
 }) {
   let progress: number | null = null;
   for (let i = logs.length - 1; i >= 0; i--) {
@@ -220,22 +218,29 @@ export function ModelCard({ model }: { model: ModelSummary }) {
   const { data: datasets } = useDatasets();
 
   const isTraining  = model.status === "TRAINING";
-  const canTrain    = model.status === "PENDING" || model.status === "FAILED";
   const isUserOwned = !model.is_base_model;
   const isUploaded  = !!model.is_uploaded;
   const isCompleted = model.status === "COMPLETED" || model.status === "READY";
+  const trainingActive = isTraining || isStarting;
 
   /** Retrain is available for ANY user-owned model (fine-tuned or uploaded) once training has run */
-  const canRetrain  = isCompleted && isUserOwned;
+  const canTrain    = !trainingActive && (model.status === "PENDING" || model.status === "FAILED");
+  const canRetrain  = isCompleted && isUserOwned && !trainingActive;
 
   const dataset = datasets?.find((d) => d.id === model.dataset_id);
   const baseInfo = BASE_MODEL_INFO[model.base_model_key ?? ""];
 
   // SSE logs — active while training or while we've just initiated start
   const { logs, isDone } = useTrainingLogs(
-    (isTraining || isStarting) ? model.id : null,
-    (isTraining || isStarting),
+    trainingActive ? model.id : null,
+    trainingActive,
   );
+
+  useEffect(() => {
+    if (isTraining || isDone || model.status === "FAILED") {
+      window.setTimeout(() => setIsStarting(false), 0);
+    }
+  }, [isTraining, isDone, model.status]);
 
   /** Resolve which dataset to use when triggering training */
   const getEffectiveDataset = () => {
@@ -264,7 +269,6 @@ export function ModelCard({ model }: { model: ModelSummary }) {
       {
         onSuccess: () => {
           toast.success("Training started.");
-          setIsStarting(false);
         },
         onError: (err) => {
           toast.error(err.message);
@@ -371,7 +375,7 @@ export function ModelCard({ model }: { model: ModelSummary }) {
             <ModelStatusDot status={isDone ? "COMPLETED" : model.status} />
             <ModelStatusBadge status={isDone ? "COMPLETED" : model.status} />
           </div>
-          {dataset && !isTraining && (
+          {dataset && !trainingActive && (
             <p className="text-xs text-muted-foreground">
               Dataset: {dataset.filename}
             </p>
@@ -382,8 +386,8 @@ export function ModelCard({ model }: { model: ModelSummary }) {
         </div>
 
         {/* ── Inline training progress ── */}
-        {(isTraining || (isDone && logs.length > 0)) && (
-          <InlineProgress logs={logs} isDone={isDone} isTraining={isTraining} />
+        {(trainingActive || (isDone && logs.length > 0)) && (
+          <InlineProgress logs={logs} isDone={isDone} />
         )}
 
         {/* Training-done banner */}
@@ -448,6 +452,7 @@ export function ModelCard({ model }: { model: ModelSummary }) {
                 onClick={handleStartTraining}
                 disabled={
                   startTraining.isPending ||
+                  trainingActive ||
                   (isUploaded ? !selectedDatasetId : !dataset)
                 }
               >
@@ -458,7 +463,7 @@ export function ModelCard({ model }: { model: ModelSummary }) {
           )}
 
           {/* ── RETRAIN (COMPLETED / READY — both fine-tuned AND uploaded) ── */}
-          {canRetrain && !isTraining && (
+          {canRetrain && (
             <div className="flex flex-col gap-2">
               {/* Divider only when not freshly trained (isDone banner already visible) */}
               {!isDone && (
@@ -531,6 +536,7 @@ export function ModelCard({ model }: { model: ModelSummary }) {
                     onClick={handleStartTraining}
                     disabled={
                       startTraining.isPending ||
+                      trainingActive ||
                       (isUploaded ? !selectedDatasetId : !dataset)
                     }
                   >
@@ -544,7 +550,7 @@ export function ModelCard({ model }: { model: ModelSummary }) {
 
           {/* ── Footer row ── */}
           <div className="flex items-center gap-2">
-            {isTraining && !isDone && (
+            {trainingActive && !isDone && (
               <span className="flex items-center gap-1 text-xs text-muted-foreground">
                 <Loader2 className="h-3 w-3 animate-spin" />
                 Training…

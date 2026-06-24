@@ -23,6 +23,20 @@ async def apply():
         """))
         await db.commit()
         print("MIGRATION: is_uploaded column ensured on models table.")
+        # Add settings column on users table to store serialized user preferences
+        await db.execute(text("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='users' AND column_name='settings'
+                ) THEN
+                    ALTER TABLE users ADD COLUMN settings TEXT;
+                END IF;
+            END$$;
+        """))
+        await db.commit()
+        print("MIGRATION: settings column ensured on users table.")
 
 
 if __name__ == "__main__":

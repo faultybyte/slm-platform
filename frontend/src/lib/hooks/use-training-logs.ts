@@ -4,6 +4,35 @@ import { useEffect, useState, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { modelsQueryKey } from "./use-models";
 
+function splitLogLines(text: string) {
+  return text.split(/\r?\n/).filter(Boolean);
+}
+
+function hasCompletionMarker(text: string) {
+  const normalized = text.toLowerCase();
+  return (
+    text.includes("JOB_FINISHED") ||
+    normalized.includes("training successfully completed") ||
+    normalized.includes("training complete")
+  );
+}
+
+function readLogText(body: unknown) {
+  if (typeof body === "string") return body;
+  if (body && typeof body === "object" && "logs" in body) {
+    const logs = (body as { logs?: unknown }).logs;
+    return typeof logs === "string" ? logs : "";
+  }
+  return "";
+}
+
+function readLogStatus(body: unknown) {
+  if (body && typeof body === "object" && "status" in body) {
+    return (body as { status?: unknown }).status;
+  }
+  return undefined;
+}
+
 export function useTrainingLogs(modelId: number | null, isTraining: boolean) {
   const [logs, setLogs] = useState<string[]>([]);
   const [isDone, setIsDone] = useState(false);
@@ -14,14 +43,16 @@ export function useTrainingLogs(modelId: number | null, isTraining: boolean) {
   // across navigation and are available even when the SSE stream is not active.
   useEffect(() => {
     if (!modelId) {
-      setLogs([]);
-      setIsDone(false);
+      window.setTimeout(() => {
+        setLogs([]);
+        setIsDone(false);
+      }, 0);
       return;
     }
 
     let cancelled = false;
 
-    (async () => {
+    const loadLogs = async () => {
       try {
         const res = await fetch(`/api/models/${modelId}/logs`);
         if (!res.ok) return;
@@ -29,25 +60,55 @@ export function useTrainingLogs(modelId: number | null, isTraining: boolean) {
         if (cancelled) return;
 
         // Backend returns { logs: string } or { model_id, status, logs }
-        const text = typeof body === "string" ? body : (body.logs ?? "");
-        const lines = text.split(/\r?\n/).filter(Boolean);
+        const text = readLogText(body);
+        const lines = splitLogLines(text);
         setLogs(lines);
 
         // Detect completion markers in historical logs
-        if (text.includes("JOB_FINISHED") || text.toLowerCase().includes("training successfully completed")) {
+        if (readLogStatus(body) === "COMPLETED" || (!isTraining && hasCompletionMarker(text))) {
           setIsDone(true);
         } else {
           setIsDone(false);
         }
-      } catch (err) {
+      } catch {
         // ignore fetch errors — we'll rely on streaming if active
       }
-    })();
+    };
+
+    loadLogs();
 
     return () => {
       cancelled = true;
     };
-  }, [modelId]);
+  }, [modelId, isTraining]);
+
+  useEffect(() => {
+    if (!modelId || !isTraining || isDone) return;
+
+    let cancelled = false;
+    const interval = window.setInterval(async () => {
+      try {
+        const res = await fetch(`/api/models/${modelId}/logs`);
+        if (!res.ok) return;
+        const body = await res.json();
+        if (cancelled) return;
+
+        const text = readLogText(body);
+        setLogs(splitLogLines(text));
+
+        if (readLogStatus(body) === "COMPLETED") {
+          setIsDone(true);
+        }
+      } catch {
+        // Keep polling on transient failures.
+      }
+    }, 1500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [modelId, isTraining, isDone]);
 
   // SSE subscription — append to existing historical logs rather than replacing.
   useEffect(() => {
@@ -67,6 +128,9 @@ export function useTrainingLogs(modelId: number | null, isTraining: boolean) {
         if (prev.length && prev[prev.length - 1] === line) return prev;
         return [...prev, line];
       });
+      if (hasCompletionMarker(line)) {
+        setIsDone(true);
+      }
     };
 
     const handleComplete = () => {
@@ -80,8 +144,7 @@ export function useTrainingLogs(modelId: number | null, isTraining: boolean) {
     es.addEventListener("complete", handleComplete as EventListener);
 
     es.onerror = () => {
-      // Treat stream error as completed to avoid endless reconnects
-      setIsDone(true);
+      // Let polling keep the UI current after a dropped stream.
       try {
         es.close();
       } catch {}

@@ -288,8 +288,22 @@ async def stop_training(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to stop worker: {e}")
 
-    await db.execute(update(Model).where(Model.id == model_id).values(worker_pid=None, status="FAILED"))
+    # Mark worker as cleared and set model to PENDING so UI shows a Start/Retry affordance.
+    await db.execute(update(Model).where(Model.id == model_id).values(worker_pid=None, status="PENDING"))
     await db.commit()
+
+    # Append a short system message to the training log and close the stream.
+    try:
+        log_path = f"storage/logs/training_{model_id}.log"
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as lf:
+            lf.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] SYSTEM: Training stopped by user.\n")
+            # Signal the tailer to finish the stream
+            lf.write("JOB_FINISHED\n")
+    except Exception:
+        # ignore logging errors
+        pass
+
     return {"status": "Stopped"}
 
 

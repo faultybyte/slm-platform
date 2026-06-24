@@ -21,3 +21,27 @@ class UserResponse(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+
+class SettingsResponse(BaseModel):
+    default_model: str
+    system_prompt: str
+    temperature: float
+    max_tokens: int
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "default_model": "TinyLlama 1.1B Chat (GGUF)",
+                "system_prompt": "You are a helpful, respectful, and honest local AI assistant.",
+                "temperature": 0.7,
+                "max_tokens": 2048,
+            }
+        }
+
+
+class SettingsUpdate(BaseModel):
+    default_model: str
+    system_prompt: str
+    temperature: float
+    max_tokens: int

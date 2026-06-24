@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSessionToken } from "@/lib/api/session";
-import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { LayoutRouter } from "@/components/dashboard/layout-router";
 
 export default async function DashboardLayout({
   children,
@@ -13,5 +13,5 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
-  return <DashboardShell>{children}</DashboardShell>;
+  return <LayoutRouter>{children}</LayoutRouter>;
 }

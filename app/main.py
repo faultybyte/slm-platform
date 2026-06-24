@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 import docker
 
-from app.routes import auth, training, datasets, inference, api_keys, conversations, documents
+from app.routes import auth, training, datasets, inference, api_keys, conversations, documents, settings, landing
 from app.seeder import seed_system_models
 from app.migrations.apply_migrations import apply as apply_migrations
 
@@ -38,6 +38,8 @@ app.include_router(datasets.router)
 app.include_router(training.router)
 app.include_router(api_keys.router)
 app.include_router(conversations.router)
+app.include_router(settings.router)
+app.include_router(landing.router)
 
 
 @app.get("/health", tags=["System"])

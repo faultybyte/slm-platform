@@ -5,6 +5,17 @@ import { apiClient } from "@/lib/api/client";
 import { modelsQueryKey } from "@/lib/hooks/use-models";
 import type { ModelSummary, RegisterModelRequest, TrainingParams } from "@/types/api";
 
+type StartTrainingVariables = {
+  modelId: number;
+  datasetPath: string;
+  baseModelKey?: string;
+  trainingParams?: TrainingParams;
+};
+
+type ModelsMutationContext = {
+  previous?: ModelSummary[];
+};
+
 export function useRegisterModel() {
   const queryClient = useQueryClient();
 
@@ -29,12 +40,7 @@ export function useStartTraining() {
       datasetPath,
       baseModelKey,
       trainingParams,
-    }: {
-      modelId: number;
-      datasetPath: string;
-      baseModelKey?: string;
-      trainingParams?: TrainingParams;
-    }) =>
+    }: StartTrainingVariables) =>
       apiClient(`/api/models/${modelId}/train`, {
         method: "POST",
         body: JSON.stringify({
@@ -44,22 +50,32 @@ export function useStartTraining() {
         }),
       }),
     onMutate: async (variables) => {
-      const mId = (variables as any)?.modelId as number;
+      const mId = variables.modelId;
       await queryClient.cancelQueries({ queryKey: modelsQueryKey });
-      const previous = queryClient.getQueryData(modelsQueryKey);
-      queryClient.setQueryData(modelsQueryKey, (old: any) => {
+      const previous = queryClient.getQueryData<ModelSummary[]>(modelsQueryKey);
+      queryClient.setQueryData<ModelSummary[]>(modelsQueryKey, (old) => {
         if (!old) return old;
-        return (old as any).map((m: any) => (m.id === mId ? { ...m, status: "TRAINING" } : m));
+        return old.map((m) => (m.id === mId ? { ...m, status: "TRAINING" } : m));
       });
       try {
         window.dispatchEvent(new CustomEvent("training:started", { detail: { modelId: mId } }));
       } catch {}
       return { previous };
     },
-    onError: (_err, _variables, context: any) => {
+    onError: (_err, _variables, context?: ModelsMutationContext) => {
       queryClient.setQueryData(modelsQueryKey, context?.previous);
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: modelsQueryKey }),
+    onSuccess: (_data, variables) => {
+      queryClient.setQueryData<ModelSummary[]>(modelsQueryKey, (old) => {
+        if (!old) return old;
+        return old.map((m) =>
+          m.id === variables.modelId ? { ...m, status: "TRAINING" } : m,
+        );
+      });
+      window.setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: modelsQueryKey });
+      }, 2000);
+    },
   });
 }
 
@@ -94,14 +110,20 @@ export function useStopTraining() {
       }),
     onMutate: async (modelId: number) => {
       await queryClient.cancelQueries({ queryKey: modelsQueryKey });
-      const previous = queryClient.getQueryData(modelsQueryKey);
-      queryClient.setQueryData(modelsQueryKey, (old: any) => {
+      const previous = queryClient.getQueryData<ModelSummary[]>(modelsQueryKey);
+      // Mark the model as ready to retry (PENDING) so the UI shows a
+      // start/retrain affordance. Also emit a client-side note so logs
+      // reflect the stop immediately.
+      queryClient.setQueryData<ModelSummary[]>(modelsQueryKey, (old) => {
         if (!old) return old;
-        return (old as any).map((m: any) => (m.id === modelId ? { ...m, status: "FAILED" } : m));
+        return old.map((m) => (m.id === modelId ? { ...m, status: "PENDING", worker_pid: null } : m));
       });
+      try {
+        window.dispatchEvent(new CustomEvent("training:note", { detail: { modelId, line: `[${new Date().toLocaleTimeString()}] SYSTEM: Training stopped by user.` } }));
+      } catch {}
       return { previous };
     },
-    onError: (_err, _variables, context: any) => {
+    onError: (_err, _variables, context?: ModelsMutationContext) => {
       queryClient.setQueryData(modelsQueryKey, context?.previous);
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: modelsQueryKey }),
@@ -120,7 +142,19 @@ export function usePauseTraining() {
         }
         return res.json().catch(() => ({}));
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: modelsQueryKey }),
+    onMutate: async (modelId: number) => {
+      await queryClient.cancelQueries({ queryKey: modelsQueryKey });
+      const previous = queryClient.getQueryData<ModelSummary[]>(modelsQueryKey);
+      queryClient.setQueryData<ModelSummary[]>(modelsQueryKey, (old) => {
+        if (!old) return old;
+        return old.map((m) => (m.id === modelId ? { ...m, status: "PAUSED" } : m));
+      });
+      return { previous };
+    },
+    onError: (_err, _variables, context?: ModelsMutationContext) => {
+      queryClient.setQueryData(modelsQueryKey, context?.previous);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: modelsQueryKey }),
   });
 }
 
