@@ -21,7 +21,7 @@ function MessageBubble({
     <div className={cn("flex gap-3 px-4 py-3", isUser && "flex-row-reverse")}>
       <div
         className={cn(
-          "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-medium",
+          "flex h-7 w-7 shrink-0 select-none items-center justify-center rounded-full text-xs font-medium",
           isUser
             ? "bg-brand text-brand-foreground"
             : "bg-secondary text-secondary-foreground",
@@ -43,10 +43,8 @@ function MessageBubble({
         ) : (
           <MarkdownRenderer content={message.content} />
         )}
-        : (
-        <MarkdownRenderer content={message.content} />)
         {showCursor && (
-          <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-current align-middle" />
+          <span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-current align-middle" />
         )}
       </div>
     </div>

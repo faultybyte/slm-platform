@@ -4,12 +4,7 @@ import { useMemo } from "react";
 import { useEffect } from "react";
 import { useModels } from "@/lib/hooks/use-models";
 import { cn } from "@/lib/utils";
-import { 
-  BrainCircuit, 
-  Sparkles, 
-  Loader2, 
-  ChevronDown
-} from "lucide-react";
+import { BrainCircuit, Sparkles, Loader2, ChevronDown } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -30,8 +25,14 @@ export function ModelSelector({
 }) {
   const { data: models, isLoading } = useModels();
 
-  const baseModels = useMemo(() => models?.filter((m) => m.is_base_model) ?? [], [models]);
-  const userModels = useMemo(() => models?.filter((m) => !m.is_base_model) ?? [], [models]);
+  const baseModels = useMemo(
+    () => models?.filter((m) => m.is_base_model) ?? [],
+    [models],
+  );
+  const userModels = useMemo(
+    () => models?.filter((m) => !m.is_base_model) ?? [],
+    [models],
+  );
 
   useEffect(() => {
     if (!models) return;
@@ -42,33 +43,49 @@ export function ModelSelector({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [models]);
 
-  const selectedModel = useMemo(() => models?.find((m) => String(m.id) === value), [models, value]);
+  const selectedModel = useMemo(
+    () => models?.find((m) => String(m.id) === value),
+    [models, value],
+  );
 
   const getStatusInfo = (status: string) => {
     const s = status.toUpperCase();
     if (s === "READY" || s === "COMPLETED") {
-      return { available: true, label: "Ready", dot: "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" };
+      return {
+        available: true,
+        label: "Ready",
+        dot: "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]",
+      };
     }
     if (s === "TRAINING") {
-      return { available: false, label: "Training", dot: "bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.5)]" };
+      return {
+        available: false,
+        label: "Training",
+        dot: "bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.5)]",
+      };
     }
-    return { available: false, label: status.toLowerCase(), dot: "bg-destructive/80" };
+    return {
+      available: false,
+      label: status.toLowerCase(),
+      dot: "bg-destructive/80",
+    };
   };
 
   return (
-    <Select 
-      value={value ?? undefined} 
-      onValueChange={onChange} 
+    <Select
+      value={value ?? undefined}
+      onValueChange={onChange}
       disabled={isLoading || !models?.length}
     >
-      <SelectTrigger 
+      {/* Added an inline style block here to force scale suppression */}
+      <SelectTrigger
+        style={{ transform: "none" }}
         className={cn(
-          "h-9 w-full rounded-xl border-input/60 bg-background/50 backdrop-blur-sm px-3 shadow-sm transition-all",
-          "hover:bg-accent/50 hover:border-accent-foreground/20",
-          "focus:ring-2 focus:ring-primary/20 focus:border-primary/50",
-          "disabled:opacity-50 disabled:cursor-not-allowed",
-          // Subtly color the trigger text if nothing is selected
-          !value && "text-muted-foreground"
+      "no-scale h-9 w-full rounded-xl border-input/60 bg-background/50 backdrop-blur-sm px-3 shadow-sm transition-all",
+      "hover:bg-accent/50 hover:border-accent-foreground/20",
+      "focus:ring-2 focus:ring-primary/20 focus:border-primary/50",
+      "disabled:opacity-50 disabled:cursor-not-allowed",
+      !value && "text-muted-foreground"
         )}
       >
         <div className="flex items-center gap-2.5 truncate">
@@ -83,8 +100,10 @@ export function ModelSelector({
               )}
             </>
           ) : null}
-          
-          <SelectValue placeholder={isLoading ? "Loading models..." : "Select a model"} />
+
+          <SelectValue
+            placeholder={isLoading ? "Loading models..." : "Select a model"}
+          />
         </div>
       </SelectTrigger>
 
@@ -103,19 +122,23 @@ export function ModelSelector({
             </SelectLabel>
             {userModels.map((m) => {
               const { available, label, dot } = getStatusInfo(m.status);
-              
+
               return (
-                <SelectItem 
-                  key={m.id} 
-                  value={String(m.id)} 
+                /* Added inline transform freeze here */
+                <SelectItem
+                  key={m.id}
+                  value={String(m.id)}
                   disabled={!available}
+                  style={{ transform: "none" }}
                   className={cn(
-                    "rounded-lg mx-1 my-0.5 cursor-pointer transition-colors focus:bg-accent/80",
-                    !available && "opacity-60"
+                    "no-scale rounded-lg mx-1 my-0.5 cursor-pointer transition-colors focus:bg-accent/80 hover:scale-100 ",
+                    !available && "opacity-60",
                   )}
                 >
                   <div className="flex items-center w-full min-w-[200px] gap-4">
-                    <span className="font-medium truncate">{m.display_name}</span>
+                    <span className="font-medium truncate">
+                      {m.display_name}
+                    </span>
                     <div className="flex items-center gap-2 shrink-0 ml-auto">
                       {!available && (
                         <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground">
@@ -142,10 +165,12 @@ export function ModelSelector({
               System Models
             </SelectLabel>
             {baseModels.map((m) => (
-              <SelectItem 
-                key={m.id} 
+              /* Added inline transform freeze here */
+              <SelectItem
+                key={m.id}
                 value={String(m.id)}
-                className="rounded-lg mx-1 my-0.5 cursor-pointer transition-colors focus:bg-accent/80"
+                style={{ transform: "none" }}
+                className="rounded-lg mx-1 my-0.5 cursor-pointer transition-colors focus:bg-accent/80 hover:scale-100"
               >
                 <span className="font-medium">{m.display_name}</span>
               </SelectItem>

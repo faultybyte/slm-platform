@@ -243,6 +243,11 @@ export function useChat({
       return;
     }
 
+    // If conversationId just changed because we created a new conversation mid-stream
+    // (first message), don't reload — we already have the optimistic messages in state
+    // and the stream is still writing to the assistant placeholder.
+    const isNewlyCreated = prevConversationIdRef.current === null && isStreaming;
+
     // Only abort if we're switching to a different conversation (not on initial load)
     // prevConversationIdRef tracks the last conversation we loaded/streamed to
     if (prevConversationIdRef.current !== null && prevConversationIdRef.current !== conversationId) {
@@ -250,6 +255,8 @@ export function useChat({
       setIsStreaming(false);
     }
     prevConversationIdRef.current = conversationId;
+
+    if (isNewlyCreated) return;
 
     const ctrl = new AbortController();
 

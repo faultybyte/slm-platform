@@ -34,7 +34,7 @@
   --ring: oklch(0.708 0 0);
 
   /* Forge brand accent - used sparingly for active states, CTAs */
-  --brand: oklch(0.55 0.18 264);
+  --brand: oklch(14.479% 0.00002 271.152 / 0.84);
   --brand-foreground: oklch(0.985 0 0);
 
   --sidebar: oklch(0.985 0 0);
@@ -83,7 +83,7 @@
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
 
-  --brand: oklch(0.65 0.18 264);
+  --brand: oklch(95.504% 0.00714 268.593);
   --brand-foreground: oklch(0.145 0 0);
 
   --sidebar: oklch(0.205 0 0);
@@ -160,5 +160,28 @@
   }
   html {
     @apply font-sans;
+  }
+  
+  /* 1. Pointer hand applies to ALL clickable triggers globally */
+  button, 
+  [role="button"] {
+    cursor: pointer !important;
+  }
+
+  /* 2. Global Hover Animations - EXCLUDING Select components */
+  button:not([data-radix-select-trigger]):not(.no-scale), 
+  [role="button"]:not([data-radix-select-trigger]):not([role="option"]):not(.no-scale) {
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    will-change: transform;
+  }
+
+  button:not([data-radix-select-trigger]):not(.no-scale):hover, 
+  [role="button"]:not([data-radix-select-trigger]):not([role="option"]):not(.no-scale):hover {
+    transform: scale(1.05) !important;
+  }
+
+  button:not([data-radix-select-trigger]):not(.no-scale):active, 
+  [role="button"]:not([data-radix-select-trigger]):not([role="option"]):not(.no-scale):active {
+    transform: scale(0.98) !important;
   }
 }
