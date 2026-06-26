@@ -6,7 +6,6 @@ import type { ConversationMessage } from "@/types/api";
 import type { ChatConfig } from "@/lib/chat-config";
 
 export interface ChatMessage extends ConversationMessage {
-  // client-only id for stable React keys before server assigns one
   clientId: string;
 }
 
@@ -25,34 +24,50 @@ export function useChat({
 }: UseChatOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const prevConversationIdRef = useRef<number | null>(null);
+  const conversationIdRef = useRef<number | null>(conversationId);
 
-  const uploadDocuments = useCallback(async (convId: number, files: File[]) => {
-    setIsUploadingDoc(true);
-    try {
-      await Promise.all(
-        files.map((file) => {
-          const form = new FormData();
-          form.append("file", file);
-          return fetch(`/api/conversations/${convId}/documents`, {
-            method: "POST",
-            body: form,
-          });
-        }),
-      );
-      setPendingFiles([]);
-    } catch {
-      toast.error("Document upload failed — continuing without context.");
-    } finally {
-      setIsUploadingDoc(false);
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
+
+  // ── RAG file upload helpers (called by ChatWorkspace) ──────────────────────
+
+  const uploadFile = useCallback(async (convId: number, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`/api/conversations/${convId}/documents`, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body?.message ?? `Upload failed: ${res.status}`);
     }
   }, []);
 
+  const uploadFiles = useCallback(
+    async (convId: number, files: File[]) => {
+      await Promise.all(files.map((f) => uploadFile(convId, f)));
+    },
+    [uploadFile],
+  );
+
+  const clearDocuments = useCallback(async (convId: number) => {
+    await fetch(`/api/conversations/${convId}/documents`, { method: "DELETE" });
+  }, []);
+
+  // ── Send message ───────────────────────────────────────────────────────────
+
+  /**
+   * pendingFilesRef: ChatWorkspace passes any queued files here before calling
+   * sendMessage so they get uploaded right after conversation creation.
+   */
+  const pendingFilesRef = useRef<File[]>([]);
+
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, pendingFiles: File[] = []) => {
       if (!modelId || isStreaming) return;
 
       const userMsg: ChatMessage = {
@@ -73,9 +88,8 @@ export function useChat({
       abortRef.current = ctrl;
 
       try {
-        let activeConvId = conversationId;
+        let activeConvId = conversationIdRef.current;
 
-        // First message in a new session — create the conversation now
         if (!activeConvId && modelId) {
           try {
             const res = await fetch("/api/conversations", {
@@ -88,17 +102,23 @@ export function useChat({
             });
             const conv = await res.json();
             activeConvId = conv.id;
+            conversationIdRef.current = conv.id;
             onConversationReady(conv.id);
           } catch {
             toast.error("Could not start conversation.");
             setIsStreaming(false);
-            setMessages((prev) => prev.slice(0, -2)); // remove both optimistic messages
+            setMessages((prev) => prev.slice(0, -2));
             return;
           }
         }
 
+        // Upload any queued documents now that we have a conversation ID
         if (pendingFiles.length > 0 && activeConvId) {
-          await uploadDocuments(activeConvId, pendingFiles);
+          try {
+            await uploadFiles(activeConvId, pendingFiles);
+          } catch {
+            toast.error("Document upload failed — continuing without context.");
+          }
         }
 
         const allMessages = [
@@ -123,12 +143,9 @@ export function useChat({
         });
 
         if (!res.ok || !res.body) {
-          let text = "";
-          try {
-            text = await res.text();
-          } catch {}
-          toast.error(text || `Stream failed: ${res.status}`);
-          // Clean up optimistic assistant placeholder
+          let errText = "";
+          try { errText = await res.text(); } catch {}
+          toast.error(errText || `Stream failed: ${res.status}`);
           setMessages((prev) => prev.slice(0, -1));
           setIsStreaming(false);
           return;
@@ -148,35 +165,23 @@ export function useChat({
           buffer = lines.pop() ?? "";
 
           for (const line of lines) {
-            // Track the event type name
             if (line.startsWith("event: ")) {
               currentEventName = line.slice(7).trim();
               continue;
             }
-
-            // Skip keepalive pings (": ping - ...")
-            if (line.startsWith(":")) {
-              continue;
-            }
-
+            if (line.startsWith(":")) continue;
             if (!line.startsWith("data: ")) {
-              // Blank line = end of event block, reset event name
               if (line === "") currentEventName = "";
               continue;
             }
-             
+
             const data = line.slice(6).trim();
 
-            // Process message events and error events
             if (currentEventName === "error") {
               try {
                 const errObj = JSON.parse(data);
-                const detail = errObj.detail ?? errObj.message ?? data;
-                toast.error(String(detail));
-              } catch {
-                toast.error(data);
-              }
-              // stop streaming on backend error
+                toast.error(String(errObj.detail ?? errObj.message ?? data));
+              } catch { toast.error(data); }
               setIsStreaming(false);
               abortRef.current?.abort();
               return;
@@ -186,32 +191,23 @@ export function useChat({
 
             try {
               const chunk = JSON.parse(data);
-
-              // Real token
               const token = chunk.token ?? "";
               if (token) {
                 setMessages((prev) => {
                   const next = [...prev];
                   const last = next[next.length - 1];
                   if (last?.role === "assistant") {
-                    next[next.length - 1] = {
-                      ...last,
-                      content: last.content + token,
-                    };
+                    next[next.length - 1] = { ...last, content: last.content + token };
                   }
                   return next;
                 });
               }
-
-            } catch {
-              // malformed chunk, skip
-            }
+            } catch { /* malformed chunk */ }
           }
         }
       } catch (err) {
         if ((err as Error).name !== "AbortError") {
           toast.error("Something went wrong. Please try again.");
-          // Remove the empty assistant placeholder on error
           setMessages((prev) => prev.slice(0, -1));
         }
       } finally {
@@ -219,23 +215,15 @@ export function useChat({
         abortRef.current = null;
       }
     },
-    [
-      modelId,
-      isStreaming,
-      messages,
-      conversationId,
-      config,
-      pendingFiles,
-      uploadDocuments,
-      onConversationReady,
-    ],
+    [modelId, isStreaming, messages, config, uploadFiles, onConversationReady],
   );
 
   const stopStreaming = useCallback(() => {
     abortRef.current?.abort();
   }, []);
 
-  // Load messages when a conversation is selected
+  // ── Load messages when conversation changes ────────────────────────────────
+
   useEffect(() => {
     if (!conversationId) {
       setMessages([]);
@@ -243,13 +231,8 @@ export function useChat({
       return;
     }
 
-    // If conversationId just changed because we created a new conversation mid-stream
-    // (first message), don't reload — we already have the optimistic messages in state
-    // and the stream is still writing to the assistant placeholder.
     const isNewlyCreated = prevConversationIdRef.current === null && isStreaming;
 
-    // Only abort if we're switching to a different conversation (not on initial load)
-    // prevConversationIdRef tracks the last conversation we loaded/streamed to
     if (prevConversationIdRef.current !== null && prevConversationIdRef.current !== conversationId) {
       abortRef.current?.abort();
       setIsStreaming(false);
@@ -259,50 +242,34 @@ export function useChat({
     if (isNewlyCreated) return;
 
     const ctrl = new AbortController();
-
     (async () => {
       try {
         const res = await fetch(`/api/conversations/${conversationId}/messages`, {
           signal: ctrl.signal,
         });
-
         if (!res.ok) {
-          let txt = "";
-          try {
-            txt = await res.text();
-          } catch {}
+          const txt = await res.text().catch(() => "");
           toast.error(txt || `Failed to load messages: ${res.status}`);
           return;
         }
-
         const msgs: ConversationMessage[] = await res.json();
         setMessages(msgs.map((m) => ({ ...m, clientId: crypto.randomUUID() })));
       } catch (err) {
-        if ((err as Error).name !== "AbortError") {
+        if ((err as Error).name !== "AbortError")
           toast.error("Failed to load conversation messages.");
-        }
       }
     })();
 
     return () => ctrl.abort();
-  }, [conversationId]);
-
-  const addPendingFile = useCallback((file: File) => {
-    setPendingFiles((prev) => [...prev, file]);
-  }, []);
-
-  const removePendingFile = useCallback((index: number) => {
-    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+  }, [conversationId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
     messages,
     isStreaming,
-    isUploadingDoc,
-    pendingFiles,
     sendMessage,
     stopStreaming,
-    addPendingFile,
-    removePendingFile,
+    uploadFile,
+    uploadFiles,
+    clearDocuments,
   };
 }

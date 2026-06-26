@@ -141,7 +141,6 @@ export function ModelSelector({
                     <span className="font-medium truncate flex-1 text-left">
                       {m.display_name}
                     </span>
- 
                     {/* Removed ml-auto, as justify-between on the parent handles it now */}
                     <div className="flex items-center gap-2 shrink-0">
                       {!available && (
