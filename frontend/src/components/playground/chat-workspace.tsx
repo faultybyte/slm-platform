@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageList } from "@/components/playground/message-list";
 import { ChatInput } from "@/components/playground/chat-input";
-import { PendingFiles } from "@/components/playground/pending-files";
 import { ModelSelector } from "@/components/playground/model-selector";
 import { PlaygroundEmptyState } from "@/components/playground/playground-empty-state";
 import { useChatConfig } from "@/components/playground/chat-config-context";
@@ -21,61 +20,53 @@ export function ChatWorkspace() {
   const searchParams = useSearchParams();
   const { data: models } = useModels();
 
-  // Keep conversationId in sync with ?conversation=<id>
   useEffect(() => {
     const param = searchParams.get("conversation");
     const parsed = param ? Number(param) : null;
     if (parsed && parsed !== conversationId) setConversationId(parsed);
   }, [searchParams]);
 
-  // On mount: restore saved model from localStorage, or default to first llama base model
   useEffect(() => {
     if (!models || models.length === 0) return;
-    if (modelId !== null) return; // already set
+    if (modelId !== null) return;
 
     const saved = localStorage.getItem(SELECTED_MODEL_KEY);
-    if (saved) {
-      const exists = models.some((m) => String(m.id) === saved);
-      if (exists) {
-        setModelId(saved);
-        return;
-      }
+    if (saved && models.some((m) => String(m.id) === saved)) {
+      setModelId(saved);
+      return;
     }
 
-    // Default: first base model whose key contains "llama" (case-insensitive)
     const llamaModel = models.find(
-      (m) => m.is_base_model && m.base_model_key?.toLowerCase().includes("llama")
+      (m) => m.is_base_model && m.base_model_key?.toLowerCase().includes("llama"),
     );
-    // Fallback: any base model
     const fallback = models.find((m) => m.is_base_model);
-    const defaultModel = llamaModel ?? fallback;
-    if (defaultModel) {
-      setModelId(String(defaultModel.id));
-    }
+    const def = llamaModel ?? fallback;
+    if (def) setModelId(String(def.id));
   }, [models]);
 
-  // Persist model selection to localStorage whenever user changes it
   const handleModelChange = (id: string | null) => {
     setModelId(id);
-    if (id) {
-      localStorage.setItem(SELECTED_MODEL_KEY, id);
-    } else {
-      localStorage.removeItem(SELECTED_MODEL_KEY);
-    }
+    if (id) localStorage.setItem(SELECTED_MODEL_KEY, id);
+    else localStorage.removeItem(SELECTED_MODEL_KEY);
   };
 
-  const { config } = useChatConfig();
+  const {
+    config,
+    pendingFiles,
+    registerRagHandlers,
+    setHasUploadedDocs,
+  } = useChatConfig();
+
   const queryClient = useQueryClient();
   const conversationsQueryKey = ["conversations"] as const;
+
   const {
     messages,
     isStreaming,
-    isUploadingDoc,
-    pendingFiles,
     sendMessage,
     stopStreaming,
-    addPendingFile,
-    removePendingFile,
+    uploadFile,
+    clearDocuments,
   } = useChat({
     modelId,
     conversationId,
@@ -86,17 +77,58 @@ export function ChatWorkspace() {
     },
   });
 
+  // Register RAG handlers with the context whenever conversationId changes so
+  // the sidebar's upload/clear buttons act on the correct conversation.
+  useEffect(() => {
+    registerRagHandlers({
+      uploadFile: async (file: File) => {
+        if (!conversationId) return; // not yet created; will be uploaded on first send
+        await uploadFile(conversationId, file);
+        setHasUploadedDocs(true);
+      },
+      clearDocuments: async () => {
+        if (!conversationId) return;
+        await clearDocuments(conversationId);
+        setHasUploadedDocs(false);
+      },
+    });
+
+    // Check RAG status when loading an existing conversation
+    if (conversationId) {
+      fetch(`/api/conversations/${conversationId}/documents`)
+        .then((r) => r.json())
+        .then((d) => setHasUploadedDocs(Boolean(d?.has_documents)))
+        .catch(() => {});
+    } else {
+      setHasUploadedDocs(false);
+    }
+
+    return () => {
+      registerRagHandlers(null);
+    };
+  }, [conversationId, uploadFile, clearDocuments, registerRagHandlers, setHasUploadedDocs]);
+
+  // Wrap sendMessage to pass any queued files so they upload with the first message
+  const handleSend = useCallback(
+    (text: string) => {
+      sendMessage(text, pendingFiles);
+    },
+    [sendMessage, pendingFiles],
+  );
+
+  // onFileDropped still works for drag-and-drop directly onto the chat input;
+  // it goes through the context's onFileSelected which handles the upload.
+  const { onFileSelected } = useChatConfig();
+
   const isDisabled = !modelId;
 
   return (
     <div className="flex h-full flex-col">
-      {/* Top bar: model selector */}
       <div className="flex items-center gap-3 border-b px-4 py-2">
         <span className="text-xs text-muted-foreground">Model</span>
-        <ModelSelector value={modelId||""} onChange={handleModelChange} />
+        <ModelSelector value={modelId || ""} onChange={handleModelChange} />
       </div>
 
-      {/* Message area */}
       <ScrollArea className="flex-1">
         {messages.length === 0 ? (
           <PlaygroundEmptyState />
@@ -105,17 +137,11 @@ export function ChatWorkspace() {
         )}
       </ScrollArea>
 
-      {/* Input area */}
       <div className="border-t px-4 py-3">
-        <PendingFiles
-          files={pendingFiles}
-          isUploading={isUploadingDoc}
-          onRemove={removePendingFile}
-        />
         <ChatInput
-          onSend={sendMessage}
+          onSend={handleSend}
           onStop={stopStreaming}
-          onFileDropped={addPendingFile}
+          onFileDropped={onFileSelected}
           isStreaming={isStreaming}
           isDisabled={isDisabled}
         />
