@@ -179,6 +179,12 @@ export function LeftSidebar({
           <div className="flex flex-col gap-0.5 mt-1 pb-4">
             {sortedConversations.map((conv) => {
               const isActive = currentConvId === String(conv.conversation_id);
+              
+              // Truncate logic: Cap at 25 characters and append "..."
+              const rawTitle = conv.title || "Untitled chat";
+              const displayTitle = rawTitle.length > 20
+                ? `${rawTitle.substring(0, 20)}...` 
+                : rawTitle;
 
               return (
                 <div 
@@ -193,7 +199,7 @@ export function LeftSidebar({
                   <div className="flex-1 min-w-0 pr-8">
                     <SidebarItem
                       href={`/dashboard?conversation=${conv.conversation_id}`}
-                      label={conv.title || "Untitled chat"}
+                      label={displayTitle}
                       icon={
                         conv.pinned 
                           ? <Pin className="h-3.5 w-3.5 shrink-0 fill-current rotate-45 text-primary" /> 

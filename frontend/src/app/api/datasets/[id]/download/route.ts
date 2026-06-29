@@ -13,7 +13,7 @@ export async function GET(
     return NextResponse.json({ message: "Not authenticated" }, { status: 401 });
   }
 
-  const res = await fetch(`${BACKEND}/api/datasets/${id}/download`, {
+  const res = await fetch(`${BACKEND}/datasets/${id}/download`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 

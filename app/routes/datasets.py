@@ -495,23 +495,20 @@ async def edit_pair(
 async def download_dataset(
     dataset_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    user_id: int = Depends(get_current_user),   # ← typed as int, consistent with every other endpoint
 ):
-    dataset, pipe = await _get_own_dataset(dataset_id, current_user.id, db)
-
+    dataset, pipe = await _get_own_dataset(dataset_id, user_id, db)  # ← user_id not id
     if not pipe or not pipe.output_file_path:
         raise HTTPException(
             status_code=404,
             detail="Processed file not found. Run the pipeline first.",
         )
-
     path = pipe.output_file_path
     if not os.path.isfile(path):
         raise HTTPException(
             status_code=404,
             detail=f"File missing on disk: {path}",
         )
-
     safe_name = dataset.filename.replace(" ", "_") + "_processed.jsonl"
     return FileResponse(
         path=path,
