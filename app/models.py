@@ -17,8 +17,8 @@ class User(Base):
     datasets = relationship("Dataset", back_populates="user", cascade="all, delete-orphan")
     models = relationship("Model", back_populates="user", cascade="all, delete-orphan")
     conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
+    api_keys = relationship("ApiKey", back_populates="user", cascade="all, delete-orphan")
     total_tokens_consumed = Column(Integer, default=0)
-    # JSON-serialized user preferences (system prompt, default model, execution params)
     settings = Column(Text, nullable=True)
 
 
@@ -33,13 +33,13 @@ class Dataset(Base):
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     user = relationship("User", back_populates="datasets")
-
     pipeline = relationship(
         "DatasetPipeline",
         back_populates="dataset",
         uselist=False,
         cascade="all, delete-orphan",
     )
+
 
 class Model(Base):
     __tablename__ = "models"
@@ -54,7 +54,6 @@ class Model(Base):
     adapter_path = Column(String, nullable=True)
     status = Column(String, default="PENDING", nullable=False)
     is_base_model = Column(Boolean, default=False, nullable=False)
-    # Distinguishes user-uploaded GGUF models from fine-tuned ones
     is_uploaded = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -95,7 +94,6 @@ class DocumentVector(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
-    source_filename = Column(String, nullable=True)
     text_chunk = Column(Text, nullable=False)
     embedding_matrix = Column(Vector(384), nullable=False)
 
@@ -106,27 +104,58 @@ class ApiKey(Base):
     __tablename__ = "api_keys"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
     key_hash = Column(String, unique=True, index=True)
     display_prefix = Column(String)
-    name = Column(String, default="Default Key")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    name = Column(String, default="My API Key")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
     is_active = Column(Boolean, default=True)
 
-"""
-ADD THIS CLASS to app/models.py, directly after the Dataset class.
-Also add the back-reference to Dataset (shown at the bottom).
+    # ── Usage tracking ──────────────────────────────────────────────────────
+    # None = unlimited
+    token_limit = Column(Integer, nullable=True, default=1_000_000)
+    tokens_used = Column(Integer, nullable=False, default=0)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
 
-Imports already present in models.py that this needs:
-  Column, Integer, String, Float, Text, ForeignKey, DateTime, func
-  relationship, Base
-"""
+    user = relationship("User", back_populates="api_keys")
+    usage_logs = relationship(
+        "ApiKeyUsageLog",
+        back_populates="api_key",
+        cascade="all, delete-orphan",
+    )
+
+
+class ApiKeyUsageLog(Base):
+    """Per-request audit trail for API key usage."""
+    __tablename__ = "api_key_usage_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    api_key_id = Column(
+        Integer,
+        ForeignKey("api_keys.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    model_id = Column(Integer, nullable=True)
+    prompt_tokens = Column(Integer, nullable=False, default=0)
+    completion_tokens = Column(Integer, nullable=False, default=0)
+    total_tokens = Column(Integer, nullable=False, default=0)
+    latency_ms = Column(Integer, nullable=True)
+    status_code = Column(Integer, default=200)
+    pii_blocked = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    api_key = relationship("ApiKey", back_populates="usage_logs")
+
 
 class DatasetPipeline(Base):
-    """
-    Tracks every stage of the 6-layer preprocessing pipeline for a Dataset.
-    Created immediately on /datasets/process and updated as the pipeline runs.
-    """
+    """Tracks every stage of the 6-layer preprocessing pipeline for a Dataset."""
     __tablename__ = "dataset_pipelines"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -134,14 +163,12 @@ class DatasetPipeline(Base):
         Integer,
         ForeignKey("datasets.id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,   # one pipeline record per dataset
+        unique=True,
     )
 
-    # ── Pipeline lifecycle ─────────────────────────────────────────────────
-    # Possible values: PROCESSING | REVIEW | COMPLETED | FAILED
     pipeline_status = Column(String, nullable=False, default="PROCESSING")
     error_message   = Column(Text, nullable=True)
-    pipeline_logs   = Column(Text, nullable=True)   # newline-joined log lines
+    pipeline_logs   = Column(Text, nullable=True)
     created_at      = Column(DateTime(timezone=True), server_default=func.now())
     updated_at      = Column(
         DateTime(timezone=True),
@@ -149,36 +176,18 @@ class DatasetPipeline(Base):
         onupdate=func.now(),
     )
 
-    # ── File paths ─────────────────────────────────────────────────────────
-    raw_file_path        = Column(String, nullable=True)   # original upload
-    output_file_path     = Column(String, nullable=True)   # cleaned .jsonl
-    quarantine_file_path = Column(String, nullable=True)   # rejected rows .jsonl
+    raw_file_path        = Column(String, nullable=True)
+    output_file_path     = Column(String, nullable=True)
+    quarantine_file_path = Column(String, nullable=True)
 
-    # ── Layer 2 output ─────────────────────────────────────────────────────
-    # One of: jsonl_messages | instruction | chat_log | unstructured_prose
-    schema_type = Column(String, nullable=True)
-
-    # ── Layer 3 stats ──────────────────────────────────────────────────────
+    schema_type      = Column(String, nullable=True)
     total_rows_raw   = Column(Integer, nullable=True)
     total_rows_clean = Column(Integer, nullable=True)
     rows_removed     = Column(Integer, nullable=True)
     duplicate_count  = Column(Integer, nullable=True)
+    dedup_threshold  = Column(Float, nullable=True, default=0.85)
+    chunk_size       = Column(Integer, nullable=True, default=500)
+    chunk_overlap    = Column(Integer, nullable=True, default=50)
+    lora_config      = Column(Text, nullable=True)
 
-    # ── Processing parameters (stored so /reprocess can replay them) ───────
-    dedup_threshold = Column(Float,   nullable=True, default=0.85)
-    chunk_size      = Column(Integer, nullable=True, default=500)
-    chunk_overlap   = Column(Integer, nullable=True, default=50)
-
-    # ── Layer 6 output ─────────────────────────────────────────────────────
-    # JSON-serialised LoRA config dict e.g. {"r":8,"lora_alpha":16,...}
-    lora_config = Column(Text, nullable=True)
-
-    # ── ORM relationship ───────────────────────────────────────────────────
     dataset = relationship("Dataset", back_populates="pipeline")
-
-
-# ─── Also patch the Dataset class ─────────────────────────────────────────────
-# Inside the Dataset class add:
-#
-#
-# This gives Dataset.pipeline as a single (or None) DatasetPipeline object.

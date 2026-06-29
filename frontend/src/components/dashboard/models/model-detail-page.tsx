@@ -371,7 +371,7 @@ export default function ModelDetailPage() {
                       />
                     </div>
                   )}
-                  <div className="px-4"><MetaRow icon={Hash} label="Model ID" value={<span className="font-mono text-xs">#{model.id}</span>} /></div>
+                  <div className="px-4"><MetaRow icon={Hash} label="Model ID" value={<span className="font-mono text-xs">model_{model.id}</span>} /></div>
                   <div className="px-4"><MetaRow icon={Calendar} label="Added" value={new Date(model.created_at).toLocaleString()} /></div>
                 </div>
               </div>

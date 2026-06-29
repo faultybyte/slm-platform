@@ -58,5 +58,5 @@ def generate_api_key():
     """Generates a secure random API key and its corresponding SHA-256 hash."""
     raw_key = f"sk-local-{secrets.token_urlsafe(32)}"
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-    display_prefix = raw_key[:12] + "..."
+    display_prefix = raw_key[:5] + "..."
     return raw_key, key_hash, display_prefix
