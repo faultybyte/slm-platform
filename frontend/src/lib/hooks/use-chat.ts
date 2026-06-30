@@ -285,6 +285,13 @@ export function useChat({
         ]);
 
         if (!msgRes.ok) {
+          if (msgRes.status === 404) {
+            // Conversation no longer exists (e.g. deleted). Don't leave
+            // stale messages on screen waiting for the parent to notice.
+            setMessages([]);
+            onDocumentsLoaded([], false);
+            return;
+          }
           const txt = await msgRes.text().catch(() => "");
           toast.error(txt || `Failed to load messages: ${msgRes.status}`);
           return;

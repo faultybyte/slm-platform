@@ -12,25 +12,25 @@ import {
 
 const CONFIG_STORAGE_KEY = "forge_chat_config";
 
-function loadPersistedConfig(): ChatConfig {
-  if (typeof window === "undefined") return DEFAULT_CHAT_CONFIG;
+function loadPersistedConfig(): ChatConfig | null {
+  if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(CONFIG_STORAGE_KEY);
-    if (!raw) return DEFAULT_CHAT_CONFIG;
+    if (!raw) return null;
     return { ...DEFAULT_CHAT_CONFIG, ...JSON.parse(raw) };
   } catch {
-    return DEFAULT_CHAT_CONFIG;
+    return null;
   }
 }
 
-function loadPersistedRagConfig(): RagConfig {
-  if (typeof window === "undefined") return DEFAULT_RAG_CONFIG;
+function loadPersistedRagConfig(): RagConfig | null {
+  if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(RAG_STORAGE_KEY);
-    if (!raw) return DEFAULT_RAG_CONFIG;
+    if (!raw) return null;
     return { ...DEFAULT_RAG_CONFIG, ...JSON.parse(raw) };
   } catch {
-    return DEFAULT_RAG_CONFIG;
+    return null;
   }
 }
 
@@ -67,9 +67,24 @@ interface ChatConfigContextValue {
 const ChatConfigContext = createContext<ChatConfigContextValue | null>(null);
 
 export function ChatConfigProvider({ children }: { children: React.ReactNode }) {
-  const [config, setConfigState] = useState<ChatConfig>(loadPersistedConfig);
-  const [ragConfig, setRagConfigState] = useState<RagConfig>(loadPersistedRagConfig);
+  const [config, setConfigState] = useState<ChatConfig>(DEFAULT_CHAT_CONFIG);
+  const [ragConfig, setRagConfigState] = useState<RagConfig>(DEFAULT_RAG_CONFIG);
   const [isSidebarOpen, setSidebarOpen] = useState(true);
+
+  // Hydrate from localStorage after mount only. Reading localStorage inside
+  // the useState initializer ran on the client's *first* (hydration) render
+  // too, so it could return a different value than the server-rendered
+  // default — causing a hydration mismatch (e.g. "Chunk size: 1000" on the
+  // client vs "500" from the server). Deferring to useEffect guarantees the
+  // first paint matches SSR exactly; the persisted value then applies a
+  // tick later, after hydration is done.
+  useEffect(() => {
+    const persistedConfig = loadPersistedConfig();
+    if (persistedConfig) setConfigState(persistedConfig);
+
+    const persistedRagConfig = loadPersistedRagConfig();
+    if (persistedRagConfig) setRagConfigState(persistedRagConfig);
+  }, []);
 
   const [uploadedFileNames, setUploadedFileNames] = useState<string[]>([]);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);

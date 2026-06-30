@@ -24,8 +24,13 @@ export function ChatWorkspace() {
   useEffect(() => {
     const param = searchParams.get("conversation");
     const parsed = param ? Number(param) : null;
-    if (parsed && parsed !== conversationId) setConversationId(parsed);
-  }, [searchParams]);
+    // Previously this only handled the "switch to a new conversation" case.
+    // When the param is removed entirely (e.g. after deleting the active
+    // conversation and navigating back to /dashboard), conversationId was
+    // never reset, so the deleted conversation's messages kept rendering
+    // in the mainbar until a hard refresh remounted the component.
+    if (parsed !== conversationId) setConversationId(parsed);
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: settings } = useSettings();
 

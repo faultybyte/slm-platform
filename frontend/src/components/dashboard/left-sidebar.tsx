@@ -104,11 +104,16 @@ export function LeftSidebar({
 
   const handleDeleteConfirm = () => {
     if (!deleteConvId) return;
+    const wasActive = currentConvId === String(deleteConvId);
     deleteMutation.mutate(deleteConvId, {
       onSuccess: () => {
-        if (currentConvId === String(deleteConvId)) {
-          router.replace("/dashboard");
-          router.refresh();
+        if (wasActive) {
+          // router.replace + router.refresh left the mainbar showing the
+          // deleted conversation until a hard refresh. Use push with a
+          // fully-qualified path with no query string so Next treats this
+          // as a real navigation and useSearchParams() in ChatWorkspace
+          // re-reads as empty immediately.
+          router.push("/dashboard");
         }
       },
     });
