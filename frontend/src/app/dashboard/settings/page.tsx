@@ -2,7 +2,13 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, User, Database, HardDrive, Settings, Key, ChevronRight, Save, Loader2, Eye, EyeOff, Copy, Check, Plus, Trash2, ShieldCheck, Activity, RefreshCw, Terminal, ChevronDown, ChevronUp } from "lucide-react";
+import { useTheme } from "next-themes";
+import {
+  ArrowLeft, User, Database, HardDrive, Settings, Key,
+  ChevronRight, Save, Loader2, Eye, EyeOff, Copy, Check,
+  Plus, Trash2, ShieldCheck, Activity, RefreshCw, Terminal,
+  ChevronDown, ChevronUp,
+} from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { Tienne } from "next/font/google";
@@ -11,27 +17,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectGroup, SelectItem,
+  SelectLabel, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  useApiKeys, useCreateApiKey, useRevokeApiKey,
-  type ApiKeyRow,
+  useApiKeys, useCreateApiKey, useRevokeApiKey, type ApiKeyRow,
 } from "@/lib/hooks/use-api-keys";
 import { useModels } from "@/lib/hooks/use-models";
+import {
+  useSettings, useUpdateSettings, useChangePassword,
+  type UserSettings, type SettingsPatch,
+} from "@/lib/hooks/use-settings";
 
 const tienne = Tienne({ subsets: ["latin"], weight: ["400", "700"] });
 
-// ── sidebar nav items ──────────────────────────────────────────────────────────
+// ── sidebar nav ────────────────────────────────────────────────────────────────
 const NAV = [
   { id: "profile",  icon: User,      label: "Account" },
   { id: "models",   icon: Database,  label: "Model preferences" },
@@ -42,9 +46,19 @@ const NAV = [
 
 type Tab = (typeof NAV)[number]["id"];
 
-// ── reusable primitives ────────────────────────────────────────────────────────
+const SECTION_LABELS: Record<Tab, string> = {
+  profile:    "Account",
+  models:     "Model preferences",
+  storage:    "Storage & paths",
+  "api-keys": "API keys",
+  general:    "General",
+};
 
-function SectionCard({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+// ── primitives ─────────────────────────────────────────────────────────────────
+
+function SectionCard({ title, description, children }: {
+  title: string; description: string; children: React.ReactNode;
+}) {
   return (
     <div className="rounded-xl border bg-card p-6">
       <div className="mb-5 border-b pb-4">
@@ -56,7 +70,9 @@ function SectionCard({ title, description, children }: { title: string; descript
   );
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Field({ label, hint, children }: {
+  label: string; hint?: string; children: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-1.5">
       <Label className="text-xs">{label}</Label>
@@ -66,11 +82,25 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
-function PasswordInput({ placeholder }: { placeholder: string }) {
+function PasswordInput({
+  placeholder,
+  value,
+  onChange,
+}: {
+  placeholder: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
   const [show, setShow] = useState(false);
   return (
     <div className="relative">
-      <Input type={show ? "text" : "password"} placeholder={placeholder} className="pr-9" />
+      <Input
+        type={show ? "text" : "password"}
+        placeholder={placeholder}
+        className="pr-9"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
       <button
         type="button"
         onClick={() => setShow((v) => !v)}
@@ -86,17 +116,15 @@ function SaveRow({ saving, onClick }: { saving: boolean; onClick: () => void }) 
   return (
     <div className="flex justify-end">
       <Button size="sm" onClick={onClick} disabled={saving}>
-        {saving ? (
-          <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…</>
-        ) : (
-          <><Save className="h-3.5 w-3.5" /> Save changes</>
-        )}
+        {saving
+          ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…</>
+          : <><Save className="h-3.5 w-3.5" /> Save changes</>}
       </Button>
     </div>
   );
 }
 
-// ── Code block with copy button ────────────────────────────────────────────────
+// ── Code block ─────────────────────────────────────────────────────────────────
 
 function CodeBlock({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
@@ -112,7 +140,9 @@ function CodeBlock({ code }: { code: string }) {
         className="absolute right-3 top-3 z-10 rounded-md border border-white/10 bg-white/5 p-1.5 text-white/60 hover:bg-white/10 hover:text-white transition-colors"
         title="Copy code"
       >
-        {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+        {copied
+          ? <Check className="h-3.5 w-3.5 text-emerald-400" />
+          : <Copy className="h-3.5 w-3.5" />}
       </button>
       <pre className="overflow-x-auto p-4 pr-12 text-[11.5px] leading-[1.7] font-mono text-[#e6edf3] whitespace-pre">
         {code}
@@ -121,64 +151,161 @@ function CodeBlock({ code }: { code: string }) {
   );
 }
 
-// ── section components (Profile / ModelPrefs / Storage / General unchanged) ────
+// ── Section: Profile ───────────────────────────────────────────────────────────
 
-function ProfileSection() {
-  const [saving, setSaving] = useState(false);
-  const save = () => {
-    setSaving(true);
-    setTimeout(() => { setSaving(false); toast.success("Profile saved."); }, 800);
+function ProfileSection({ settings }: { settings: UserSettings }) {
+  const update = useUpdateSettings();
+  const changePassword = useChangePassword();
+
+  const [displayName, setDisplayName] = useState(settings.display_name ?? "");
+  const [currentPw, setCurrentPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingPw, setSavingPw] = useState(false);
+
+  // Sync if settings reload
+  useEffect(() => {
+    setDisplayName(settings.display_name ?? "");
+  }, [settings.display_name]);
+
+  const saveProfile = async () => {
+    setSavingProfile(true);
+    try {
+      await update.mutateAsync({ display_name: displayName });
+      toast.success("Profile saved.");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to save profile.");
+    } finally {
+      setSavingProfile(false);
+    }
   };
+
+  const savePassword = async () => {
+    if (!currentPw || !newPw) {
+      toast.error("Please fill in both password fields.");
+      return;
+    }
+    setSavingPw(true);
+    try {
+      await changePassword.mutateAsync({ current_password: currentPw, new_password: newPw });
+      toast.success("Password changed.");
+      setCurrentPw("");
+      setNewPw("");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to change password.");
+    } finally {
+      setSavingPw(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <SectionCard title="Personal info" description="Your display name and email address.">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Email">
-            <Input placeholder="you@example.com" />
+            <Input value={settings.email} disabled className="opacity-60 cursor-not-allowed" />
           </Field>
           <Field label="Display name">
-            <Input placeholder="Your name" />
+            <Input
+              placeholder="Your name"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+            />
           </Field>
         </div>
+        <SaveRow saving={savingProfile} onClick={saveProfile} />
       </SectionCard>
 
       <SectionCard title="Change password" description="Update your login credentials.">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Current password">
-            <PasswordInput placeholder="••••••••" />
+            <PasswordInput placeholder="••••••••" value={currentPw} onChange={setCurrentPw} />
           </Field>
           <Field label="New password">
-            <PasswordInput placeholder="••••••••" />
+            <PasswordInput placeholder="••••••••" value={newPw} onChange={setNewPw} />
           </Field>
         </div>
+        <SaveRow saving={savingPw} onClick={savePassword} />
       </SectionCard>
-
-      <SaveRow saving={saving} onClick={save} />
     </div>
   );
 }
 
-function ModelPrefsSection() {
+// ── Section: Model preferences ─────────────────────────────────────────────────
+
+function ModelPrefsSection({ settings }: { settings: UserSettings }) {
+  const update = useUpdateSettings();
+  const { data: models } = useModels();
+
+  const [form, setForm] = useState({
+    default_model:  settings.default_model,
+    system_prompt:  settings.system_prompt,
+    temperature:    settings.temperature,
+    max_tokens:     settings.max_tokens,
+    top_p:          settings.top_p,
+    context_window: settings.context_window,
+  });
   const [saving, setSaving] = useState(false);
-  const save = () => {
+
+  useEffect(() => {
+    setForm({
+      default_model:  settings.default_model,
+      system_prompt:  settings.system_prompt,
+      temperature:    settings.temperature,
+      max_tokens:     settings.max_tokens,
+      top_p:          settings.top_p,
+      context_window: settings.context_window,
+    });
+  }, [settings]);
+
+  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
+    setForm((f) => ({ ...f, [k]: v }));
+
+  const save = async () => {
     setSaving(true);
-    setTimeout(() => { setSaving(false); toast.success("Model preferences saved."); }, 800);
+    try {
+      await update.mutateAsync(form);
+      toast.success("Model preferences saved.");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to save.");
+    } finally {
+      setSaving(false);
+    }
   };
+
+  // Build model options: registered models + hardcoded base models as fallback
+  const modelOptions = useMemo(() => {
+    if (models && models.length > 0) {
+      return models.map((m) => ({
+        value: m.display_name.toLowerCase().replace(/ /g, "-"),
+        label: m.display_name,
+      }));
+    }
+    return [
+      { value: "llama-3.2-1b-instruct",    label: "Llama 3.2 1B Instruct" },
+      { value: "qwen-2.5-3b-instruct",     label: "Qwen 2.5 3B Instruct" },
+      { value: "deepseek-r1-distill-1.5b", label: "DeepSeek-R1 Distill 1.5B" },
+      { value: "gemma-3-1b-it",            label: "Gemma 3 1B IT" },
+    ];
+  }, [models]);
+
   return (
     <div className="flex flex-col gap-6">
-      <SectionCard title="Default base model" description="Used when starting a new conversation with no explicit model selected.">
+      <SectionCard
+        title="Default base model"
+        description="Used when starting a new conversation with no explicit model selected."
+      >
         <Field label="Base model">
-          <Select>
+          <Select value={form.default_model} onValueChange={(v) => set("default_model", v)}>
             <SelectTrigger className="h-9">
               <SelectValue placeholder="Select a model" />
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
                 <SelectLabel>Models</SelectLabel>
-                <SelectItem value="llama-3.2-1b-instruct">Llama 3.2 1B Instruct</SelectItem>
-                <SelectItem value="qwen-2.5-3b-instruct">Qwen 2.5 3B Instruct</SelectItem>
-                <SelectItem value="deepseek-r1-distill-1.5b">DeepSeek-R1 Distill 1.5B</SelectItem>
-                <SelectItem value="gemma-3-1b-it">Gemma 3 1B IT</SelectItem>
+                {modelOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
               </SelectGroup>
             </SelectContent>
           </Select>
@@ -187,24 +314,44 @@ function ModelPrefsSection() {
           <textarea
             rows={3}
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring resize-none"
-            defaultValue="You are a helpful, respectful, and honest local AI assistant."
+            value={form.system_prompt}
+            onChange={(e) => set("system_prompt", e.target.value)}
           />
         </Field>
       </SectionCard>
 
-      <SectionCard title="Inference parameters" description="Applied to all conversations unless overridden in the playground sidebar.">
+      <SectionCard
+        title="Inference parameters"
+        description="Applied to all conversations unless overridden in the playground sidebar."
+      >
         <div className="grid gap-6 sm:grid-cols-2">
           <Field label="Temperature" hint="Higher values make output more creative and random.">
-            <Input type="number" step="0.1" min="0" max="2" defaultValue="0.7" />
+            <Input
+              type="number" step="0.1" min="0" max="2"
+              value={form.temperature}
+              onChange={(e) => set("temperature", parseFloat(e.target.value) || 0)}
+            />
           </Field>
           <Field label="Max tokens" hint="Maximum length of each generated response.">
-            <Input type="number" defaultValue="2048" />
+            <Input
+              type="number"
+              value={form.max_tokens}
+              onChange={(e) => set("max_tokens", parseInt(e.target.value) || 0)}
+            />
           </Field>
           <Field label="Top-p" hint="Nucleus sampling — lower values focus output.">
-            <Input type="number" step="0.05" min="0" max="1" defaultValue="1.0" />
+            <Input
+              type="number" step="0.05" min="0" max="1"
+              value={form.top_p}
+              onChange={(e) => set("top_p", parseFloat(e.target.value) || 0)}
+            />
           </Field>
           <Field label="Context window" hint="Number of tokens retained from conversation history.">
-            <Input type="number" defaultValue="4096" />
+            <Input
+              type="number"
+              value={form.context_window}
+              onChange={(e) => set("context_window", parseInt(e.target.value) || 0)}
+            />
           </Field>
         </div>
       </SectionCard>
@@ -214,37 +361,94 @@ function ModelPrefsSection() {
   );
 }
 
-function StorageSection() {
+// ── Section: Storage ───────────────────────────────────────────────────────────
+
+function StorageSection({ settings }: { settings: UserSettings }) {
+  const update = useUpdateSettings();
+
+  const [form, setForm] = useState({
+    datasets_root:           settings.datasets_root,
+    adapters_root:           settings.adapters_root,
+    uploaded_models_root:    settings.uploaded_models_root,
+    logs_root:               settings.logs_root,
+    base_models_root:        settings.base_models_root,
+    docker_image:            settings.docker_image,
+    docker_healthcheck_timeout: settings.docker_healthcheck_timeout,
+  });
   const [saving, setSaving] = useState(false);
-  const save = () => {
+
+  useEffect(() => {
+    setForm({
+      datasets_root:              settings.datasets_root,
+      adapters_root:              settings.adapters_root,
+      uploaded_models_root:       settings.uploaded_models_root,
+      logs_root:                  settings.logs_root,
+      base_models_root:           settings.base_models_root,
+      docker_image:               settings.docker_image,
+      docker_healthcheck_timeout: settings.docker_healthcheck_timeout,
+    });
+  }, [settings]);
+
+  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
+    setForm((f) => ({ ...f, [k]: v }));
+
+  const save = async () => {
     setSaving(true);
-    setTimeout(() => { setSaving(false); toast.success("Paths saved."); }, 800);
+    try {
+      await update.mutateAsync(form);
+      toast.success("Paths saved.");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to save.");
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const storagePaths: { label: string; key: keyof typeof form }[] = [
+    { label: "Datasets root",    key: "datasets_root" },
+    { label: "Adapters root",    key: "adapters_root" },
+    { label: "Uploaded models",  key: "uploaded_models_root" },
+    { label: "Training logs",    key: "logs_root" },
+    { label: "Base model GGUFs", key: "base_models_root" },
+  ];
+
   return (
     <div className="flex flex-col gap-6">
-      <SectionCard title="Storage paths" description="Directories where Forge writes model adapters, dataset files, and training logs.">
+      <SectionCard
+        title="Storage paths"
+        description="Directories where Forge writes model adapters, dataset files, and training logs."
+      >
         <div className="flex flex-col gap-4">
-          {[
-            { label: "Datasets root",    value: "storage/datasets" },
-            { label: "Adapters root",    value: "storage/adapters" },
-            { label: "Uploaded models",  value: "storage/uploaded_models" },
-            { label: "Training logs",    value: "storage/logs" },
-            { label: "Base model GGUFs", value: "storage/models" },
-          ].map((p) => (
-            <Field key={p.label} label={p.label}>
-              <Input defaultValue={p.value} className="font-mono text-xs" />
+          {storagePaths.map(({ label, key }) => (
+            <Field key={key} label={label}>
+              <Input
+                value={form[key] as string}
+                onChange={(e) => set(key, e.target.value)}
+                className="font-mono text-xs"
+              />
             </Field>
           ))}
         </div>
       </SectionCard>
 
-      <SectionCard title="Docker settings" description="Configuration for the llama.cpp inference containers.">
+      <SectionCard
+        title="Docker settings"
+        description="Configuration for the llama.cpp inference containers."
+      >
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Container image" hint="Pulled from ghcr.io by default.">
-            <Input defaultValue="ghcr.io/ggml-org/llama.cpp:server" className="font-mono text-xs" />
+            <Input
+              value={form.docker_image}
+              onChange={(e) => set("docker_image", e.target.value)}
+              className="font-mono text-xs"
+            />
           </Field>
           <Field label="Health-check timeout (s)" hint="Seconds to wait for container readiness.">
-            <Input type="number" defaultValue="600" />
+            <Input
+              type="number"
+              value={form.docker_healthcheck_timeout}
+              onChange={(e) => set("docker_healthcheck_timeout", parseInt(e.target.value) || 0)}
+            />
           </Field>
         </div>
       </SectionCard>
@@ -254,17 +458,35 @@ function StorageSection() {
   );
 }
 
-function GeneralSection() {
+// ── Section: General ───────────────────────────────────────────────────────────
+
+function GeneralSection({ settings }: { settings: UserSettings }) {
+  const update = useUpdateSettings();
+  const { setTheme: applyTheme } = useTheme();
+  const [theme, setTheme] = useState(settings.theme ?? "system");
   const [saving, setSaving] = useState(false);
-  const save = () => {
+
+  useEffect(() => { setTheme(settings.theme ?? "system"); }, [settings.theme]);
+
+  const save = async () => {
     setSaving(true);
-    setTimeout(() => { setSaving(false); toast.success("Settings saved."); }, 800);
+    try {
+      await update.mutateAsync({ theme });
+      // Actually apply the theme immediately via next-themes
+      applyTheme(theme);
+      toast.success("Settings saved.");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to save.");
+    } finally {
+      setSaving(false);
+    }
   };
+
   return (
     <div className="flex flex-col gap-6">
       <SectionCard title="Appearance" description="Choose your preferred interface theme.">
         <Field label="Theme">
-          <Select>
+          <Select value={theme} onValueChange={(v) => { setTheme(v); applyTheme(v); }}>
             <SelectTrigger className="h-9">
               <SelectValue placeholder="Select a theme" />
             </SelectTrigger>
@@ -352,20 +574,19 @@ function UsageBar({ used, limit }: { used: number; limit: number | null }) {
   );
 }
 
-// ── Quick-start code snippet (live, uses real key + real models) ───────────────
+// ── Quick-start code snippet ───────────────────────────────────────────────────
 
 function ApiQuickStart({ keys, serverUrl }: { keys: ApiKeyRow[]; serverUrl: string }) {
   const { data: models } = useModels();
   const [open, setOpen] = useState(false);
 
-  // Pick the first active key's prefix for display, or a placeholder
   const exampleKey = keys.find((k) => k.is_active)?.prefix
     ? `${keys.find((k) => k.is_active)!.prefix}...`
     : "sk-local-<your-key-here>";
 
-  // Build a model list comment from real models
   const modelListComment = useMemo(() => {
-    if (!models || models.length === 0) return `#   (no models registered yet — go to Models tab to create one)`;
+    if (!models || models.length === 0)
+      return `#   (no models registered yet — go to Models tab to create one)`;
     return models
       .map((m) => {
         const slug = m.display_name.toLowerCase().replace(/ /g, "-");
@@ -375,12 +596,9 @@ function ApiQuickStart({ keys, serverUrl }: { keys: ApiKeyRow[]; serverUrl: stri
       .join("\n");
   }, [models]);
 
-  // First ready/completed model slug for the default MODEL= line
   const defaultModelSlug = useMemo(() => {
     if (!models || models.length === 0) return "tinyllama";
-    const ready = models.find(
-      (m) => m.status === "READY" || m.status === "COMPLETED"
-    );
+    const ready = models.find((m) => m.status === "READY" || m.status === "COMPLETED");
     return ready
       ? ready.display_name.toLowerCase().replace(/ /g, "-")
       : models[0].display_name.toLowerCase().replace(/ /g, "-");
@@ -394,50 +612,28 @@ Install deps first:  pip install openai
 from openai import OpenAI
 
 # ── 1. Configure the client ───────────────────────────────────────────────────
-#   base_url  → your Forge server address (change if not running locally)
-#   api_key   → copy a full key from "Active keys" above (shown once on creation)
 client = OpenAI(
     base_url="${serverUrl}/v1",
     api_key="${exampleKey}",  # ← paste your full sk-local-... key here
 )
 
 # ── 2. Pick a model ───────────────────────────────────────────────────────────
-#   Run GET ${serverUrl}/v1/models to see every available model.
-#   Your registered models:
 ${modelListComment}
 MODEL = "${defaultModelSlug}"
 
 # ── 3. Send a chat completion ─────────────────────────────────────────────────
-print(f"Sending request to model: {MODEL!r}")
 response = client.chat.completions.create(
     model=MODEL,
     messages=[
-        {
-            "role": "system",
-            "content": "You are a helpful assistant.",  # ← customise as needed
-        },
-        {
-            "role": "user",
-            "content": "Help me draft a vacation policy.",
-        },
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user",   "content": "Help me draft a vacation policy."},
     ],
     max_tokens=256,
-    temperature=0.7,   # 0 = deterministic, 2 = very creative
-    top_p=1.0,         # nucleus sampling — lower values focus the output
+    temperature=0.7,
+    top_p=1.0,
 )
 
-# ── 4. Print the response ─────────────────────────────────────────────────────
-print("\\nResponse:")
-print(response.choices[0].message.content)
-
-# ── 5. Token usage ────────────────────────────────────────────────────────────
-#   Each request deducts tokens from your key's budget.
-#   Check the usage bar in Forge Settings → API keys after running this.
-usage = response.usage
-if usage:
-    print(f"\\nTokens used — prompt: {usage.prompt_tokens}, "
-          f"completion: {usage.completion_tokens}, "
-          f"total: {usage.total_tokens}")`;
+print(response.choices[0].message.content)`;
 
   return (
     <div className="rounded-xl border bg-card overflow-hidden">
@@ -456,33 +652,23 @@ if usage:
             </p>
           </div>
         </div>
-        {open
-          ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
-          : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+        {open ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
       </button>
 
       {open && (
         <div className="border-t px-6 pb-6 pt-4 flex flex-col gap-3">
-          {/* Install hint */}
           <div className="flex items-center gap-2 rounded-lg border border-violet-500/20 bg-violet-500/5 px-3 py-2">
             <span className="text-[11px] text-violet-400 font-mono">pip install openai</span>
             <span className="text-[11px] text-muted-foreground">— only dependency needed</span>
           </div>
-
           <CodeBlock code={code} />
-
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Replace the <code className="font-mono text-violet-400">api_key</code> value with the full{" "}
-            <code className="font-mono text-violet-400">sk-local-…</code> key shown when you created it.
-            Token usage updates in Forge after each request — watch the usage bar above refresh.
-          </p>
         </div>
       )}
     </div>
   );
 }
 
-// ── API Keys section ───────────────────────────────────────────────────────────
+// ── Section: API Keys ──────────────────────────────────────────────────────────
 
 function ApiKeysSection() {
   const { data: keys, isLoading, refetch } = useApiKeys();
@@ -495,10 +681,9 @@ function ApiKeysSection() {
   const [revoking, setRevoking]       = useState<ApiKeyRow | null>(null);
   const [copiedId, setCopiedId]       = useState<number | null>(null);
 
-  // Server URL — assume same origin in production; localhost for dev
   const serverUrl =
     typeof window !== "undefined"
-      ? window.location.origin.replace(/:3000$/, ":8000") // Next dev → FastAPI
+      ? window.location.origin.replace(/:3000$/, ":8000")
       : "http://localhost:8000";
 
   const create = () => {
@@ -550,7 +735,6 @@ function ApiKeysSection() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Active keys list */}
       <SectionCard
         title="Active keys"
         description="Use these keys in the Authorization header to call your fine-tuned models via the OpenAI-compatible gateway."
@@ -620,7 +804,6 @@ function ApiKeysSection() {
         </button>
       </SectionCard>
 
-      {/* Create new key */}
       <SectionCard
         title="Create a new key"
         description="The full key value is shown exactly once — copy it immediately after creation."
@@ -653,15 +836,12 @@ function ApiKeysSection() {
         </div>
       </SectionCard>
 
-      {/* Quick-start snippet — shown once there are keys */}
       <ApiQuickStart keys={keys ?? []} serverUrl={serverUrl} />
 
-      {/* Key reveal modal */}
       {revealedKey && (
         <KeyRevealDialog rawKey={revealedKey} onClose={() => setRevealedKey(null)} />
       )}
 
-      {/* Revoke confirm modal */}
       {revoking && (
         <Dialog open onOpenChange={(o) => !o && setRevoking(null)}>
           <DialogContent className="max-w-sm">
@@ -686,34 +866,32 @@ function ApiKeysSection() {
   );
 }
 
-// ── page ───────────────────────────────────────────────────────────────────────
-
-const SECTION_LABELS: Record<Tab, string> = {
-  profile:    "Account",
-  models:     "Model preferences",
-  storage:    "Storage & paths",
-  "api-keys": "API keys",
-  general:    "General",
-};
+// ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
   const [active, setActive] = useState<Tab>("profile");
   const [isMounted, setIsMounted] = useState(false);
+
+  const { data: settings, isLoading, isError } = useSettings();
+  const { setTheme: applyTheme } = useTheme();
+
+  // Apply theme from server settings whenever it loads/changes
+  useEffect(() => {
+    if (settings?.theme) applyTheme(settings.theme);
+  }, [settings?.theme]);
+
   useEffect(() => {
     const savedTab = localStorage.getItem("forge_active_tab") as Tab;
-    if (savedTab && SECTION_LABELS[savedTab]) {
-      setActive(savedTab);
-    }
+    if (savedTab && SECTION_LABELS[savedTab]) setActive(savedTab);
     setIsMounted(true);
   }, []);
+
   const handleTabChange = (id: Tab) => {
     setActive(id);
     localStorage.setItem("forge_active_tab", id);
   };
 
-  if (!isMounted) {
-    return null;
-  }
+  if (!isMounted) return null;
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -743,7 +921,7 @@ export default function SettingsPage() {
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Settings sidebar */}
+        {/* Sidebar */}
         <aside className="flex w-56 shrink-0 flex-col border-r bg-sidebar py-6">
           <p className="mb-2 px-4 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Settings
@@ -778,11 +956,28 @@ export default function SettingsPage() {
               {active === "general"  && "Appearance and account-level actions."}
             </p>
 
-            {active === "profile"  && <ProfileSection />}
-            {active === "models"   && <ModelPrefsSection />}
-            {active === "storage"  && <StorageSection />}
+            {/* Loading state */}
+            {isLoading && active !== "api-keys" && (
+              <div className="flex flex-col gap-4">
+                {[...Array(2)].map((_, i) => (
+                  <div key={i} className="h-48 animate-pulse rounded-xl bg-muted" />
+                ))}
+              </div>
+            )}
+
+            {/* Error state */}
+            {isError && active !== "api-keys" && (
+              <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-6 text-sm text-destructive">
+                Failed to load settings. Please refresh the page.
+              </div>
+            )}
+
+            {/* Sections — only render once settings are loaded (except API keys which is self-contained) */}
             {active === "api-keys" && <ApiKeysSection />}
-            {active === "general"  && <GeneralSection />}
+            {settings && active === "profile"  && <ProfileSection settings={settings} />}
+            {settings && active === "models"   && <ModelPrefsSection settings={settings} />}
+            {settings && active === "storage"  && <StorageSection settings={settings} />}
+            {settings && active === "general"  && <GeneralSection settings={settings} />}
           </div>
         </main>
       </div>

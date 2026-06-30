@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
       );
     }
     return NextResponse.json(
-      { message: "Unexpected error during login" },
+      { message: "Unexpected error during login. Check if Docker container is running." },
       { status: 500 }
     );
   }

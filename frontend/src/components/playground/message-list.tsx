@@ -32,7 +32,7 @@ function MessageBubble({
 
       <div
         className={cn(
-          "max-w-[75%] rounded-xl px-4 py-3",
+          "max-w-[75%] rounded-xl px-4 py-3 group",
           isUser
             ? "bg-brand text-brand-foreground"
             : "bg-secondary text-secondary-foreground",
@@ -45,6 +45,13 @@ function MessageBubble({
         )}
         {showCursor && (
           <span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-current align-middle" />
+        )}
+        {message.role === "assistant" && message.modelName && (
+          <div className="mt-2 opacity-0 transition-opacity group-hover:opacity-100">
+            <span className="text-[11px] text-muted-foreground">
+              Model: {message.modelName}
+            </span>
+          </div>
         )}
       </div>
     </div>

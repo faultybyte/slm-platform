@@ -38,14 +38,27 @@ import type { TrainingParams } from "@/types/api";
 
 const BASE_MODEL_INFO: Record<
   string,
-  { params: string; useCase: string; speed: string }
+  { params: string; label: string; speed: string }
 > = {
-  
-  qwen: {
-    params: "0.5B",
+  "llama3.2-1b": {
+    params: "1B",
     speed: "Very fast · minimal VRAM",
-    useCase:
-      "Ultra-compact model. Good for multilingual tasks and rapid prototyping.",
+    label: "Good for lightweight general-purpose chat and low-VRAM inference.",
+  },
+  "deepseek-r1-distill-qwen-1.5b": {
+    params: "1.5B",
+    speed: "Fast · distilled quality",
+    label: "Well suited for quick reasoning and concise answer generation.",
+  },
+  "gemma3-1b": {
+    params: "1B",
+    speed: "Fast · efficient",
+    label: "Good for broad multi-domain tasks with efficient inference.",
+  },
+  "qwen2.5-3b": {
+    params: "2.5B",
+    speed: "Balanced · strong instruction following",
+    label: "Great for instruction-following and conversational workloads.",
   },
 };
 
@@ -346,21 +359,10 @@ export function ModelCard({ model }: { model: ModelSummary }) {
               <span className="text-[11px] font-medium">
                 {baseInfo.params} params · {baseInfo.speed}
               </span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowBaseInfo((v) => !v);
-                }}
-                className="rounded p-0.5 text-muted-foreground hover:text-foreground"
-              >
-                <Info className="h-3 w-3" />
-              </button>
             </div>
-            {showBaseInfo && (
-              <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
-                {baseInfo.useCase}
-              </p>
-            )}
+            <p className="mt-1.5 text-[11px] leading-5 text-muted-foreground">
+              {baseInfo.label}
+            </p>
           </div>
         )}
 

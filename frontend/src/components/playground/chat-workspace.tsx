@@ -11,6 +11,7 @@ import { PlaygroundEmptyState } from "@/components/playground/playground-empty-s
 import { useChatConfig } from "@/components/playground/chat-config-context";
 import { useChat } from "@/lib/hooks/use-chat";
 import { useModels } from "@/lib/hooks/use-models";
+import { useSettings } from "@/lib/hooks/use-settings";
 
 const SELECTED_MODEL_KEY = "forge_selected_model_id";
 
@@ -26,22 +27,38 @@ export function ChatWorkspace() {
     if (parsed && parsed !== conversationId) setConversationId(parsed);
   }, [searchParams]);
 
+  const { data: settings } = useSettings();
+
+  const normalizeModelSlug = (value: string) =>
+    value.trim().toLowerCase().replace(/\s+/g, "-");
+
   useEffect(() => {
     if (!models || models.length === 0) return;
     if (modelId !== null) return;
 
+    // 1. Use the default_model from user settings (matched by display_name slug)
+    if (settings?.default_model) {
+      const slug = normalizeModelSlug(settings.default_model);
+      const bySlug = models.find(
+        (m) => normalizeModelSlug(m.display_name) === slug
+      );
+      if (bySlug) {
+        setModelId(String(bySlug.id));
+        return;
+      }
+    }
+
+    // 2. Honour last manually chosen model
     const saved = localStorage.getItem(SELECTED_MODEL_KEY);
     if (saved && models.some((m) => String(m.id) === saved)) {
       setModelId(saved);
       return;
     }
 
-    const llamaModel = models.find(
-      (m) => m.is_base_model && m.base_model_key?.toLowerCase().includes("llama"),
-    );
-    const def = llamaModel ?? models.find((m) => m.is_base_model);
+    // 3. Fallback: first base model
+    const def = models.find((m) => m.is_base_model);
     if (def) setModelId(String(def.id));
-  }, [models]);
+  }, [models, settings, modelId]);
 
   const handleModelChange = (id: string | null) => {
     setModelId(id);
@@ -60,6 +77,7 @@ export function ChatWorkspace() {
     clearPendingFiles,
   } = useChatConfig();
 
+  const selectedModel = modelId ? models?.find((m) => String(m.id) === modelId) : undefined;
   const queryClient = useQueryClient();
 
   const handleDocumentsLoaded = useCallback(
@@ -79,6 +97,7 @@ export function ChatWorkspace() {
     clearDocuments,
   } = useChat({
     modelId,
+    modelName: selectedModel?.display_name ?? null,
     conversationId,
     config,
     ragConfig,

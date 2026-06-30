@@ -7,10 +7,12 @@ import type { ChatConfig, RagConfig } from "@/lib/chat-config";
 
 export interface ChatMessage extends ConversationMessage {
   clientId: string;
+  modelName?: string;
 }
 
 interface UseChatOptions {
   modelId: string | null;
+  modelName?: string | null;
   conversationId: number | null;
   config: ChatConfig;
   ragConfig: RagConfig;
@@ -22,6 +24,7 @@ interface UseChatOptions {
 
 export function useChat({
   modelId,
+  modelName,
   conversationId,
   config,
   ragConfig,
@@ -88,6 +91,7 @@ export function useChat({
         clientId: crypto.randomUUID(),
         role: "assistant",
         content: "",
+        modelName: modelName ?? undefined,
       };
 
       setMessages((prev) => [...prev, userMsg, assistantPlaceholder]);
@@ -287,7 +291,11 @@ export function useChat({
         }
 
         const msgs: ConversationMessage[] = await msgRes.json();
-        setMessages(msgs.map((m) => ({ ...m, clientId: crypto.randomUUID() })));
+        setMessages(msgs.map((m) => ({
+          ...m,
+          clientId: crypto.randomUUID(),
+          modelName: modelName ?? undefined,
+        })));
 
         if (docRes.ok) {
           const docData = await docRes.json();

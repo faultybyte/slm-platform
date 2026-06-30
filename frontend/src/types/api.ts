@@ -23,6 +23,7 @@ export interface Token {
 export interface AuthMeResponse {
   id: number;
   email: string;
+  display_name?: string;
   created_at: string;
   /** Token consumption telemetry shown in the Navbar. Backend shape is loose
    * (schema: {}), so we keep this optional and defensive on read. */
