@@ -18,42 +18,45 @@ function MessageBubble({
   const showCursor = isLast && !isUser && isStreaming;
 
   return (
-    <div className={cn("flex gap-3 px-4 py-3", isUser && "flex-row-reverse")}>
-      <div
-        className={cn(
-          "flex h-7 w-7 shrink-0 select-none items-center justify-center rounded-full text-xs font-medium",
-          isUser
-            ? "bg-brand text-brand-foreground"
-            : "bg-secondary text-secondary-foreground",
-        )}
-      >
-        {isUser ? "U" : "AI"}
+    <div className={cn("flex flex-col", !isUser && "group")}>
+      <div className={cn("flex gap-3 px-4 py-3", isUser && "flex-row-reverse")}>
+        <div
+          className={cn(
+            "flex h-7 w-7 shrink-0 select-none items-center justify-center rounded-full text-xs font-medium",
+            isUser
+              ? "bg-brand text-brand-foreground"
+              : "bg-secondary text-secondary-foreground",
+          )}
+        >
+          {isUser ? "U" : "AI"}
+        </div>
+
+        <div
+          className={cn(
+            "max-w-[75%] rounded-xl px-4 py-3",
+            isUser
+              ? "bg-brand text-brand-foreground"
+              : "bg-secondary text-secondary-foreground",
+          )}
+        >
+          {isUser ? (
+            <span className="whitespace-pre-wrap">{message.content}</span>
+          ) : (
+            <MarkdownRenderer content={message.content} />
+          )}
+          {showCursor && (
+            <span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-current align-middle" />
+          )}
+        </div>
       </div>
 
-      <div
-        className={cn(
-          "max-w-[75%] rounded-xl px-4 py-3 group",
-          isUser
-            ? "bg-brand text-brand-foreground"
-            : "bg-secondary text-secondary-foreground",
-        )}
-      >
-        {isUser ? (
-          <span className="whitespace-pre-wrap">{message.content}</span>
-        ) : (
-          <MarkdownRenderer content={message.content} />
-        )}
-        {showCursor && (
-          <span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-current align-middle" />
-        )}
-        {message.role === "assistant" && message.modelName && (
-          <div className="mt-2 opacity-0 transition-opacity group-hover:opacity-100">
-            <span className="text-[11px] text-muted-foreground">
-              Model: {message.modelName}
-            </span>
-          </div>
-        )}
-      </div>
+      {message.role === "assistant" && message.modelName && (
+        <div className={cn("px-4 pt-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100", isUser && "flex flex-row-reverse")}>
+          <span className="text-[11px] text-muted-foreground">
+            {message.modelName}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

@@ -107,7 +107,8 @@ export function LeftSidebar({
     deleteMutation.mutate(deleteConvId, {
       onSuccess: () => {
         if (currentConvId === String(deleteConvId)) {
-          router.push("/dashboard");
+          router.replace("/dashboard");
+          router.refresh();
         }
       },
     });

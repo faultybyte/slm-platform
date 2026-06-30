@@ -46,19 +46,21 @@ export function UserMenu() {
       <DropdownMenu>
         <DropdownMenuTrigger className="rounded-full outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring">
           <Avatar>
-              <AvatarFallback>
-                {initialsFromName(settings?.display_name || user?.display_name, user?.email)}
-              </AvatarFallback>
-        
+            <AvatarFallback>
+              {initialsFromName(settings?.display_name || user?.display_name, user?.email)}
+            </AvatarFallback>
+          </Avatar>
+        </DropdownMenuTrigger>
+
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuLabel className="font-normal">
             <p className="truncate text-sm font-medium text-foreground">
               {settings?.display_name || user?.display_name || user?.email || "Loading..."}
             </p>
           </DropdownMenuLabel>
-          
+
           <DropdownMenuSeparator />
-          
+
           <DropdownMenuItem
             onClick={() => logout.mutate()}
             disabled={logout.isPending}
@@ -68,8 +70,6 @@ export function UserMenu() {
             <span>{logout.isPending ? "Signing out..." : "Sign out"}</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
-        </Avatar>
-        </DropdownMenuTrigger>
       </DropdownMenu>
     </div>
   );
