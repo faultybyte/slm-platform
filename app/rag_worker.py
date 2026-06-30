@@ -307,25 +307,31 @@ async def process_document_task(
     source_filename: str = "",
     chunk_size: int = 500,
     overlap: int = 50,
-):
-    """Background worker that processes the document asynchronously.
+) -> dict:
+    """Processes a document end-to-end: file -> markdown (structure-preserving)
+    -> chunks (heading and table aware) -> embeddings committed to the DB.
 
-    Pipeline: file -> markdown (structure-preserving) -> chunks (heading and
-    table aware), instead of the previous file -> raw text -> fixed-width
-    character slices, which fragmented tables and produced unusable chunks.
+    Returns a result dict so the caller (the upload route) can know whether
+    chunks actually landed before it responds to the client. This is awaited
+    directly by the route rather than scheduled as a fire-and-forget
+    BackgroundTask: BackgroundTasks only run *after* the HTTP response is
+    sent, so the client previously got "Accepted" and could immediately ask
+    a question before a single chunk existed in the database, while the
+    embeddings landed moments later — i.e. the exact "chunks are stored but
+    the answer ignores them" race this fixes.
     """
     try:
         markdown_text = extract_markdown(file_path)
 
         if not markdown_text.strip():
             print(f"SYSTEM WARNING: No text could be extracted from {file_path}")
-            return
+            return {"status": "error", "chunk_count": 0, "detail": "No text could be extracted from the file."}
 
         text_chunks = chunk_markdown(markdown_text, chunk_size=chunk_size, overlap=overlap)
 
         if not text_chunks:
             print(f"SYSTEM WARNING: No chunks produced from {file_path}")
-            return
+            return {"status": "error", "chunk_count": 0, "detail": "No chunks could be produced from the file."}
 
         embedding_inputs = [_to_embedding_text(c) for c in text_chunks]
         embeddings = list(embedding_model.embed(embedding_inputs))
@@ -345,9 +351,11 @@ async def process_document_task(
                 f"SYSTEM: Successfully embedded {len(text_chunks)} chunks "
                 f"(size={chunk_size}, overlap={overlap}) for Conv #{conversation_id}"
             )
+            return {"status": "ok", "chunk_count": len(text_chunks), "detail": None}
 
     except Exception as e:
         print(f"SYSTEM: RAG Worker Error on Conv #{conversation_id}: {str(e)}")
+        return {"status": "error", "chunk_count": 0, "detail": str(e)}
 
     finally:
         if os.path.exists(file_path):
